@@ -178,9 +178,8 @@ int main(int argc, char* argv[]) {
         !Libraries::Pad::InputReplay::ConfigureRecord(*inputRecord, exitAfterReplay)) {
         return 2;
     }
-    if (inputReplay &&
-        !Libraries::Pad::InputReplay::ConfigureReplay(*inputReplay, exitAfterReplay,
-                                                      inputReplayOrdered)) {
+    if (inputReplay && !Libraries::Pad::InputReplay::ConfigureReplay(*inputReplay, exitAfterReplay,
+                                                                     inputReplayOrdered)) {
         return 2;
     }
 

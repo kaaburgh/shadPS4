@@ -30,8 +30,8 @@ constexpr u32 ClockGnmSubmitDone = 1;
 constexpr u32 CallTag = 1;
 constexpr u32 EndTag = 2;
 constexpr size_t CaptureLimit = 32 * 1024 * 1024;
-constexpr size_t FileHeaderSize = sizeof(Magic) + sizeof(FormatVersion) + sizeof(ClockGnmSubmitDone) +
-                                  sizeof(u64);
+constexpr size_t FileHeaderSize =
+    sizeof(Magic) + sizeof(FormatVersion) + sizeof(ClockGnmSubmitDone) + sizeof(u64);
 constexpr size_t EndRecordSize = sizeof(EndTag) + sizeof(u64) + sizeof(u32) + sizeof(u64);
 constexpr size_t FixedReplayOverhead = FileHeaderSize + EndRecordSize;
 
@@ -96,7 +96,8 @@ public:
         std::lock_guard lock{mutex};
         Reset();
         if (requested_path.empty() || std::filesystem::exists(requested_path)) {
-            LOG_ERROR(Lib_Pad, "INPUT_REPLAY RECORDING_FAILED: output is empty or already exists: {}",
+            LOG_ERROR(Lib_Pad,
+                      "INPUT_REPLAY RECORDING_FAILED: output is empty or already exists: {}",
                       requested_path.string());
             return false;
         }
@@ -164,9 +165,9 @@ public:
                 if (!Save()) {
                     return RecordingFail("write failed while completing stream");
                 }
-                LOG_INFO(Lib_Pad,
-                         "INPUT_REPLAY RECORD_COMPLETE calls={} end={}:{} gnm_start={} path={}",
-                         calls.size(), end.progression, end.ordinal, base_progression, path.string());
+                LOG_INFO(
+                    Lib_Pad, "INPUT_REPLAY RECORD_COMPLETE calls={} end={}:{} gnm_start={} path={}",
+                    calls.size(), end.progression, end.ordinal, base_progression, path.string());
                 boundary_progression.reset();
                 mode = Mode::RecordComplete;
             }
@@ -185,7 +186,8 @@ public:
         }
 
         if (handle != bound_handle) {
-            return Fail("active handle changed", CurrentPosition(progression), api, capacity, handle);
+            return Fail("active handle changed", CurrentPosition(progression), api, capacity,
+                        handle);
         }
         if (progression < last_progression) {
             return Fail("GNM submit-done counter moved backward", CurrentPosition(progression), api,
@@ -199,10 +201,11 @@ public:
                 return count;
             }
             if (count > capacity || count > ORBIS_PAD_MAX_DATA_NUM) {
-                return Fail("live provider returned impossible count", actual, api, capacity, handle);
+                return Fail("live provider returned impossible count", actual, api, capacity,
+                            handle);
             }
-            const size_t added = sizeof(u32) * 5 + sizeof(u64) +
-                                 static_cast<size_t>(count) * sizeof(OrbisPadData);
+            const size_t added =
+                sizeof(u32) * 5 + sizeof(u64) + static_cast<size_t>(count) * sizeof(OrbisPadData);
             if (capture_bytes > CaptureLimit - FixedReplayOverhead ||
                 added > CaptureLimit - FixedReplayOverhead - capture_bytes) {
                 return RecordingFail("capture limit exceeded");
@@ -299,7 +302,8 @@ private:
             boundary_progression = have_observed_progression
                                        ? std::optional<u32>{observed_progression}
                                        : std::optional<u32>{progression};
-            LOG_INFO(Lib_Pad, "INPUT_REPLAY transition requested at GNM submit-done {}", progression);
+            LOG_INFO(Lib_Pad, "INPUT_REPLAY transition requested at GNM submit-done {}",
+                     progression);
         }
     }
 
@@ -381,9 +385,9 @@ private:
     void Complete(OrbisPadData* data) {
         mode = Mode::Complete;
         WriteNeutral(data);
-        LOG_INFO(Lib_Pad,
-                 "INPUT_REPLAY REPLAY_COMPLETE calls={} recorded_end={}:{} policy={}", calls.size(),
-                 end.progression, end.ordinal, ordered_match ? "ordered-call" : "strict-position");
+        LOG_INFO(Lib_Pad, "INPUT_REPLAY REPLAY_COMPLETE calls={} recorded_end={}:{} policy={}",
+                 calls.size(), end.progression, end.ordinal,
+                 ordered_match ? "ordered-call" : "strict-position");
         if (exit_after_replay && !self_test) {
             std::quick_exit(0);
         }
@@ -412,7 +416,8 @@ private:
         const u64 payload_size = payload.size();
         output.write(Magic.data(), Magic.size());
         output.write(reinterpret_cast<const char*>(&FormatVersion), sizeof(FormatVersion));
-        output.write(reinterpret_cast<const char*>(&ClockGnmSubmitDone), sizeof(ClockGnmSubmitDone));
+        output.write(reinterpret_cast<const char*>(&ClockGnmSubmitDone),
+                     sizeof(ClockGnmSubmitDone));
         output.write(reinterpret_cast<const char*>(&payload_size), sizeof(payload_size));
         output.write(reinterpret_cast<const char*>(payload.data()), payload.size());
         output.close();
@@ -488,10 +493,10 @@ private:
             call.api = static_cast<ApiKind>(api);
             call.samples.resize(call.count);
             if (have_previous) {
-                const bool valid_next =
-                    (call.position.progression == previous.progression &&
-                     call.position.ordinal == previous.ordinal + 1) ||
-                    (call.position.progression > previous.progression && call.position.ordinal == 0);
+                const bool valid_next = (call.position.progression == previous.progression &&
+                                         call.position.ordinal == previous.ordinal + 1) ||
+                                        (call.position.progression > previous.progression &&
+                                         call.position.ordinal == 0);
                 if (!valid_next) {
                     reason = "non-canonical call ordering";
                     return false;
@@ -596,8 +601,7 @@ int RunSelfTest(const std::filesystem::path& directory) {
         {Sample(128, OrbisPadButtonDataOffset::None)},
         {Sample(220, OrbisPadButtonDataOffset::None)},
         {},
-        {Sample(128, OrbisPadButtonDataOffset::None),
-         Sample(128, OrbisPadButtonDataOffset::Cross)},
+        {Sample(128, OrbisPadButtonDataOffset::None), Sample(128, OrbisPadButtonDataOffset::Cross)},
         {Sample(128, OrbisPadButtonDataOffset::None)},
         {Sample(128, OrbisPadButtonDataOffset::None)},
     };
@@ -620,8 +624,11 @@ int RunSelfTest(const std::filesystem::path& directory) {
     RequestToggle();
     Dispatch(ApiKind::Read, 7, buffer, 1, 99, live);
     const std::array<std::tuple<u32, ApiKind, s32>, 5> shape{{
-        {100, ApiKind::Read, 1}, {100, ApiKind::ReadState, 1}, {101, ApiKind::Read, 2},
-        {102, ApiKind::Read, 2}, {103, ApiKind::ReadState, 1},
+        {100, ApiKind::Read, 1},
+        {100, ApiKind::ReadState, 1},
+        {101, ApiKind::Read, 2},
+        {102, ApiKind::Read, 2},
+        {103, ApiKind::ReadState, 1},
     }};
     for (const auto& [progression, api, capacity] : shape) {
         std::memset(buffer, 0xa5, sizeof(buffer));
@@ -672,9 +679,9 @@ int RunSelfTest(const std::filesystem::path& directory) {
                     (!expected_output.empty() &&
                      std::memcmp(buffer, expected_output.data(),
                                  expected_output.size() * sizeof(*buffer)) != 0) ||
-                    std::memcmp(buffer + expected_output.size(),
-                                before.data() + expected_output.size(),
-                                (std::size(buffer) - expected_output.size()) * sizeof(*buffer)) != 0) {
+                    std::memcmp(
+                        buffer + expected_output.size(), before.data() + expected_output.size(),
+                        (std::size(buffer) - expected_output.size()) * sizeof(*buffer)) != 0) {
                     return false;
                 }
             }

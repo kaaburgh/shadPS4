@@ -447,8 +447,7 @@ static int ReadImpl(InputReplay::ApiKind api, s32 handle, OrbisPadData* pData, s
     }
     const u32 progression = DebugState.GetGnmFrameNum();
     return InputReplay::Dispatch(
-        api, handle, pData, num, progression,
-        [&controller](OrbisPadData* output, s32 capacity) {
+        api, handle, pData, num, progression, [&controller](OrbisPadData* output, s32 capacity) {
             std::array<Input::State, ORBIS_PAD_MAX_DATA_NUM> states{};
             const int ret_num = controller.ReadStates(states.data(), capacity);
             return ProcessStates(output, states.data(), ret_num);
