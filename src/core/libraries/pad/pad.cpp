@@ -440,6 +440,11 @@ static int ReadImpl(InputReplay::ApiKind api, s32 handle, OrbisPadData* pData, s
         return ORBIS_PAD_ERROR_INVALID_HANDLE;
     }
     auto& controller = *it->second;
+    if (!InputReplay::IsEnabled()) {
+        std::array<Input::State, ORBIS_PAD_MAX_DATA_NUM> states{};
+        const int ret_num = controller.ReadStates(states.data(), num);
+        return ProcessStates(pData, states.data(), ret_num);
+    }
     const u32 progression = DebugState.GetGnmFrameNum();
     return InputReplay::Dispatch(
         api, handle, pData, num, progression,

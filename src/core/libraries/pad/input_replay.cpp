@@ -103,6 +103,7 @@ public:
         path = requested_path;
         exit_after_replay = requested_exit;
         mode = Mode::RecordArmed;
+        enabled.store(true, std::memory_order_release);
         LOG_INFO(Lib_Pad, "INPUT_REPLAY record armed; press F10 to start and F10 to stop: {}",
                  path.string());
         return true;
@@ -122,6 +123,7 @@ public:
             return false;
         }
         mode = Mode::ReplayArmed;
+        enabled.store(true, std::memory_order_release);
         LOG_INFO(Lib_Pad,
                  "INPUT_REPLAY replay armed; press F10 at the start state: {} calls policy={}",
                  calls.size(), ordered_match ? "ordered-call" : "strict-position");
@@ -133,12 +135,14 @@ public:
     }
 
     bool IsEnabled() {
-        std::lock_guard lock{mutex};
-        return mode != Mode::Off;
+        return enabled.load(std::memory_order_acquire);
     }
 
     int Dispatch(ApiKind api, s32 handle, OrbisPadData* data, s32 capacity, u32 progression,
                  const LiveRead& live_read) {
+        if (!enabled.load(std::memory_order_acquire)) {
+            return live_read(data, capacity);
+        }
         std::lock_guard lock{mutex};
         if (mode == Mode::Off) {
             return live_read(data, capacity);
@@ -255,6 +259,9 @@ public:
     }
 
     int RejectUnsupported(const char* api_name, u32 progression) {
+        if (!enabled.load(std::memory_order_acquire)) {
+            return ORBIS_OK;
+        }
         std::lock_guard lock{mutex};
         if (mode != Mode::Recording && mode != Mode::Replaying) {
             return ORBIS_OK;
@@ -265,6 +272,7 @@ public:
 
 private:
     void Reset() {
+        enabled.store(false, std::memory_order_release);
         mode = Mode::Off;
         path.clear();
         calls.clear();
@@ -508,6 +516,7 @@ private:
     }
 
     std::mutex mutex;
+    std::atomic_bool enabled{false};
     std::atomic_bool toggle_requested{false};
     Mode mode{Mode::Off};
     std::filesystem::path path;
