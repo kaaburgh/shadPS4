@@ -30,9 +30,14 @@ constexpr u32 ClockGnmSubmitDone = 1;
 constexpr u32 CallTag = 1;
 constexpr u32 EndTag = 2;
 constexpr size_t CaptureLimit = 32 * 1024 * 1024;
+constexpr size_t FileHeaderSize = sizeof(Magic) + sizeof(FormatVersion) + sizeof(ClockGnmSubmitDone) +
+                                  sizeof(u64);
+constexpr size_t EndRecordSize = sizeof(EndTag) + sizeof(u64) + sizeof(u32) + sizeof(u64);
+constexpr size_t FixedReplayOverhead = FileHeaderSize + EndRecordSize;
 
 static_assert(std::is_trivially_copyable_v<OrbisPadData>);
 static_assert(sizeof(OrbisPadData) == 120, "Replay format is bound to the pinned pad ABI");
+static_assert(FixedReplayOverhead < CaptureLimit);
 
 enum class Mode {
     Off,
@@ -194,7 +199,8 @@ public:
             }
             const size_t added = sizeof(u32) * 5 + sizeof(u64) +
                                  static_cast<size_t>(count) * sizeof(OrbisPadData);
-            if (capture_bytes > CaptureLimit || added > CaptureLimit - capture_bytes) {
+            if (capture_bytes > CaptureLimit - FixedReplayOverhead ||
+                added > CaptureLimit - FixedReplayOverhead - capture_bytes) {
                 return RecordingFail("capture limit exceeded");
             }
             Call call{};
@@ -376,7 +382,7 @@ private:
 
     bool Save() {
         std::vector<u8> payload;
-        payload.reserve(capture_bytes + 32);
+        payload.reserve(capture_bytes + EndRecordSize);
         for (const Call& call : calls) {
             Append(payload, CallTag);
             Append(payload, call.position.progression);
