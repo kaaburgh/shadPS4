@@ -170,6 +170,7 @@ public:
                     calls.size(), end.progression, end.ordinal, base_progression, path.string());
                 boundary_progression.reset();
                 mode = Mode::RecordComplete;
+                enabled.store(false, std::memory_order_release);
             }
         }
 
