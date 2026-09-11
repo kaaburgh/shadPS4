@@ -11,6 +11,7 @@
 #include <iostream>
 #include <iterator>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <tuple>
