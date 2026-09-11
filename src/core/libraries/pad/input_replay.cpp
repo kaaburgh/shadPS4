@@ -60,7 +60,7 @@ struct Call {
     ApiKind api{};
     u32 capacity{};
     u32 count{};
-    std::array<OrbisPadData, ORBIS_PAD_MAX_DATA_NUM> samples{};
+    std::vector<OrbisPadData> samples;
 };
 
 template <typename T>
@@ -213,6 +213,7 @@ public:
             call.capacity = static_cast<u32>(capacity);
             call.count = static_cast<u32>(count);
             if (count > 0) {
+                call.samples.resize(static_cast<size_t>(count));
                 std::memcpy(call.samples.data(), data, static_cast<size_t>(count) * sizeof(*data));
             }
             calls.push_back(call);
@@ -485,6 +486,7 @@ private:
                 return false;
             }
             call.api = static_cast<ApiKind>(api);
+            call.samples.resize(call.count);
             if (have_previous) {
                 const bool valid_next =
                     (call.position.progression == previous.progression &&
