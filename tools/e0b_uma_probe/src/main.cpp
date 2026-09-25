@@ -205,6 +205,11 @@ int main(int argc, char** argv) {
     report.Fact("validation_errors",
                 opt.validate ? std::to_string(ctx.ValidationErrors()) : "not enabled");
     report.Fact("device_lost", ctx.device_lost ? "yes" : "no");
+    if (opt.validate && ctx.ValidationErrors() > 0) {
+        // Results obtained through invalid API usage are not trustworthy.
+        report.Add("validation", "VK_LAYER_KHRONOS_validation", Status::Error,
+                   Sprintf("%u validation errors, see log", ctx.ValidationErrors()));
+    }
     report.PrintSummary();
 
     const std::string path = opt.json_path.empty() ? DefaultJsonPath() : opt.json_path;

@@ -594,6 +594,18 @@ Memory Context::ImportHost(void* ptr, VkDeviceSize size, uint32_t required_bits,
         m.note = "VK_EXT_external_memory_host not available";
         return m;
     }
+    // Both the pointer (VUID-vkGetMemoryHostPointerPropertiesEXT-pHostPointer-01753,
+    // VUID-VkImportMemoryHostPointerInfoEXT-pHostPointer-01749) and allocationSize
+    // (VUID-VkMemoryAllocateInfo-allocationSize-01745) must be multiples of the runtime
+    // minImportedHostPointerAlignment; never make the call otherwise.
+    if (!HostImportAligned(ptr, size)) {
+        m.result = VK_ERROR_FEATURE_NOT_PRESENT;
+        m.note = Sprintf("host import skipped: pointer %s / size %s not a multiple of "
+                         "minImportedHostPointerAlignment %s",
+                         Hex(reinterpret_cast<uintptr_t>(ptr)).c_str(), Hex(size).c_str(),
+                         Hex(min_host_ptr_align).c_str());
+        return m;
+    }
     VkMemoryHostPointerPropertiesEXT hp{VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT};
     m.result =
         GetHostPtrProps(device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT, ptr, &hp);

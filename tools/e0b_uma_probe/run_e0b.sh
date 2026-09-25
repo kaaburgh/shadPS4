@@ -46,14 +46,30 @@ echo "== running probe (log: $out/probe.log)"
 "$probe" --json "$out/probe.json" "$@" 2>&1 | tee "$out/probe.log"
 status=${PIPESTATUS[0]}
 
+vstatus=0
 if [ "${E0B_VALIDATE:-0}" = "1" ]; then
     echo "== validation pass"
     "$probe" --validate --tests caps,t1,t2,t3,t5 --json "$out/probe-validate.json" "$@" \
         >"$out/probe-validate.log" 2>&1
-    grep -c "validation error" "$out/probe-validate.log" | sed 's/^/validation errors: /'
+    vstatus=$?
+    verrors=$(grep -c "validation error" "$out/probe-validate.log")
+    echo "validation pass: exit code $vstatus, validation errors $verrors"
+    if [ "$verrors" -gt 0 ] && [ "$vstatus" -eq 0 ]; then
+        vstatus=1
+    fi
 fi
 
 tar -czf "$out.tar.gz" -C "$(dirname "$out")" "$(basename "$out")"
 echo
-echo "results: $out.tar.gz (probe exit code $status)"
+echo "results: $out.tar.gz"
+# Exit status: the probe's own (0 ok, 1 FAIL/ERROR present, 2 setup error, other = crash);
+# 3 when only the validation pass failed.
+if [ "$status" -ne 0 ]; then
+    echo "probe exit code $status"
+    exit "$status"
+fi
+if [ "$vstatus" -ne 0 ]; then
+    echo "validation pass failed"
+    exit 3
+fi
 exit 0

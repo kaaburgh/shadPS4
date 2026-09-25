@@ -682,6 +682,14 @@ void T4Stress(Probe& p) {
             const uint64_t read_va = arena.aliased ? va2 : va1;
             std::mt19937 rng(p.opt.seed);
             uint64_t cpu_to_gpu = 0, gpu_to_cpu = 0, bad_iters = 0, dwords = 0, sync_errors = 0;
+            int first_sync_errno = 0;
+            const auto sync = [&](bool start, bool read, bool write) {
+                const int e = DmaBufSync(reg.sync_fd, start, read, write);
+                if (e != 0) {
+                    ++sync_errors;
+                    first_sync_errno = first_sync_errno ? first_sync_errno : e;
+                }
+            };
             const double t0 = NowUs();
             for (uint32_t it = 0; it < p.opt.t4_iters; ++it) {
                 uint64_t off = rng() % (total_dw - 1);
@@ -690,11 +698,11 @@ void T4Stress(Probe& p) {
                 const uint32_t k = p.NextSeed();
                 const uint32_t k2 = k ^ 0xA5A5A5A5u;
                 if (v.sync) {
-                    sync_errors += DmaBufSync(reg.sync_fd, true, false, true) != 0;
+                    sync(true, false, true);
                 }
                 CpuWrite(CpuPtr(p, reg, va1, off * 4), len, k);
                 if (v.sync) {
-                    sync_errors += DmaBufSync(reg.sync_fd, false, false, true) != 0;
+                    sync(false, false, true);
                 }
                 GpuBatch b(p.ctx, 2);
                 const uint32_t i = b.Verify(path, ArenaView(arena, read_va + off * 4),
@@ -704,11 +712,11 @@ void T4Stress(Probe& p) {
                 b.HostBarrier();
                 b.Submit();
                 if (v.sync) {
-                    sync_errors += DmaBufSync(reg.sync_fd, true, true, false) != 0;
+                    sync(true, true, false);
                 }
                 const CpuCheck c = CpuVerify(CpuPtr(p, reg, va2, off * 4), len, k2);
                 if (v.sync) {
-                    sync_errors += DmaBufSync(reg.sync_fd, false, true, false) != 0;
+                    sync(false, true, false);
                 }
                 const SlotResult s = b.Slot(i);
                 const uint64_t g = s.mismatches + (s.checked != len ? 1 : 0);
@@ -719,13 +727,29 @@ void T4Stress(Probe& p) {
             }
             const double us = NowUs() - t0;
             const bool ok = cpu_to_gpu == 0 && gpu_to_cpu == 0;
-            p.r.Add(test, name, ok ? Status::Pass : Status::Fail,
-                    Sprintf("cpu->gpu mismatches %llu, gpu->cpu mismatches %llu, bad iterations "
-                            "%llu of %u (%s)",
-                            static_cast<unsigned long long>(cpu_to_gpu),
-                            static_cast<unsigned long long>(gpu_to_cpu),
-                            static_cast<unsigned long long>(bad_iters), p.opt.t4_iters,
-                            PathName(path)),
+            std::string detail =
+                Sprintf("cpu->gpu mismatches %llu, gpu->cpu mismatches %llu, bad iterations "
+                        "%llu of %u (%s)",
+                        static_cast<unsigned long long>(cpu_to_gpu),
+                        static_cast<unsigned long long>(gpu_to_cpu),
+                        static_cast<unsigned long long>(bad_iters), p.opt.t4_iters, PathName(path));
+            // The coherence verdict comes from the variants without the ioctl. DMA_BUF_IOCTL_SYNC
+            // on a udmabuf only syncs udmabuf's own device mapping, so this variant is never
+            // evidence of coherence: INFO when the ioctl works, UNSUPPORTED when it fails.
+            Status status = ok ? Status::Pass : Status::Fail;
+            if (v.sync) {
+                if (sync_errors) {
+                    status = Status::Unsupported;
+                    detail = Sprintf("DMA_BUF_IOCTL_SYNC failed %llu times (first: %s); ",
+                                     static_cast<unsigned long long>(sync_errors),
+                                     std::strerror(first_sync_errno)) +
+                             detail;
+                } else {
+                    status = Status::Info;
+                    detail = "informational, not a coherence verdict: " + detail;
+                }
+            }
+            p.r.Add(test, name, status, detail,
                     {{"iterations", double(p.opt.t4_iters)},
                      {"dwords", double(dwords)},
                      {"us_per_iteration", us / std::max<uint32_t>(1, p.opt.t4_iters)},
@@ -788,9 +812,21 @@ void T5Remap(Probe& p) {
 }
 
 void T6Scaling(Probe& p) {
+    // Imports count against maxMemoryAllocationCount like any allocation, and the probe (and
+    // the driver) already hold others; keep a wide margin below the limit.
+    const uint64_t limit = p.ctx.props.limits.maxMemoryAllocationCount;
+    const uint64_t margin = std::max<uint64_t>(256, limit / 4);
+    const uint64_t alloc_cap = limit > margin ? limit - margin : 0;
+    uint64_t cap = std::min<uint64_t>(p.opt.t6_max, alloc_cap);
+    if (p.dbs.IsFake()) {
+        cap = std::min<uint64_t>(cap, 256);
+    }
+    p.r.Fact("T6.max_objects",
+             Sprintf("%llu (maxMemoryAllocationCount %llu, margin %llu, --t6-max %u)",
+                     static_cast<unsigned long long>(cap), static_cast<unsigned long long>(limit),
+                     static_cast<unsigned long long>(margin), p.opt.t6_max));
     std::vector<uint32_t> scale;
-    const uint32_t cap = p.dbs.IsFake() ? std::min<uint32_t>(p.opt.t6_max, 256) : p.opt.t6_max;
-    for (const uint32_t n : {1u, 16u, 128u, 1024u, 4096u}) {
+    for (const uint32_t n : {1u, 16u, 128u, 1024u, 2048u, 4096u}) {
         if (n <= cap) {
             scale.push_back(n);
         }
@@ -809,8 +845,14 @@ void T6Scaling(Probe& p) {
         return;
     }
     for (const Backend be : {Backend::DeviceLocal, Backend::HostBulk, Backend::DmaBufBulk}) {
+        std::string limit_hit; // set once object creation runs out of a resource
         for (const uint32_t n : scale) {
             const std::string variant = Sprintf("%s/N=%u", BackendName(be), n);
+            if (!limit_hit.empty()) {
+                p.r.Add("T6.bo_scaling", variant, Status::Skip,
+                        "resource limit reached at a smaller N: " + limit_hit);
+                continue;
+            }
             RunVariant(p, "T6.bo_scaling", variant, [&] {
                 auto& ctx = p.ctx;
                 const Arena& arena = NeedArena(p, be);
@@ -839,10 +881,23 @@ void T6Scaling(Probe& p) {
                         const bool unsup = b.unsupported || (b.Ok() && b.mem_offset % p.block);
                         const std::string why = b.Ok() ? "offset not block aligned" : b.error;
                         p.Release(b);
-                        if (i == 0 && unsup) {
-                            throw Unsupported(why);
+                        if (i == 0) {
+                            if (unsup) {
+                                throw Unsupported(why);
+                            }
+                            throw std::runtime_error(why);
                         }
-                        throw std::runtime_error(Sprintf("object %u of %u: %s", i, n, why.c_str()));
+                        if (ctx.device_lost) {
+                            throw std::runtime_error(
+                                Sprintf("object %u of %u: %s", i, n, why.c_str()));
+                        }
+                        // The first objects were created fine: running out now is a limit
+                        // (allocation count, pinned memory, fds), not a feasibility error.
+                        limit_hit = Sprintf("object %u of %u: %s", i, n, why.c_str());
+                        p.r.Add("T6.bo_scaling", variant, Status::Info,
+                                "stopped, resource limit reached at " + limit_hit,
+                                {{"objects_created", double(i)}});
+                        return;
                     }
                     objs.push_back(b);
                 }

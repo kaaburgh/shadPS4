@@ -89,9 +89,9 @@ cat /sys/module/udmabuf/parameters/size_limit_mb   # 64 во всех релиз
 | **T2** `stitched_scattered` | 64 KiB из четырёх разбросанных, несравнимых PA-кусков по 16 KiB (`host_gva`, `dmabuf_list`), плюс `(planB)` | Проверяет, снимает ли сшивка ограничение `VA ≡ PA (mod 64K)` |
 | **T2** `noncongruent_contiguous` | Непрерывный PA со сдвигом 16 KiB относительно 64 KiB | Bulk-импорт, начатый с этого PA, тоже решает задачу: отсчёт `memoryOffset` идёт от начала импорта |
 | **T3** `overlap_alias_barrier` | Два разных `VkDeviceMemory`, делящих страницы (сдвинутые aliases). Запись через первый, barrier, чтение через второй | Вне модели Vulkan, поэтому проверяется функционально. `no_barrier` — только INFO |
-| **T4** `coherence_stress` | 256 случайных CPU→GPU→CPU циклов **без** flush/invalidate. Для udmabuf есть вариант с `DMA_BUF_IOCTL_SYNC` | Ожидание на x86: PASS в обоих вариантах. Ioctl синхронизирует только собственный mapping udmabuf, так что разницы быть не должно |
+| **T4** `coherence_stress` | 256 случайных CPU→GPU→CPU циклов **без** flush/invalidate. Для udmabuf есть вариант с `DMA_BUF_IOCTL_SYNC` | Вердикт о когерентности дают только варианты **без** ioctl, на x86 ожидается PASS. Вариант `+DMA_BUF_IOCTL_SYNC` всегда INFO, а если ioctl возвращает ошибки — UNSUPPORTED: ioctl синхронизирует только собственный mapping udmabuf и доказательством не считается |
 | **T5** `remap_identity_timeline` | Блок arena перебинживается на другой PA. `vkQueueBindSparse` ждёт timeline предыдущей работы, следующая работа ждёт bind | Проверяет упорядочивание rebind, которого нет в #5047 (там residency только растёт). Метрики: время вызовов bind |
-| **T6** `bo_scaling` | Время submit+wait при N = 1…4096 импортированных объектов (и device-local для сравнения) | На RADV каждая импортированная память — в глобальном BO-списке каждого submit. Рост `*_submit_wait_median_us` с N означает, что сшивать нужно по VMA, а не по блоку |
+| **T6** `bo_scaling` | Время submit+wait при N = 1…4096 импортированных объектов (и device-local для сравнения). N ограничен `maxMemoryAllocationCount` с запасом (факт `T6.max_objects`) | На RADV каждая импортированная память — в глобальном BO-списке каждого submit. Рост `*_submit_wait_median_us` с N означает, что сшивать нужно по VMA, а не по блоку. Упор в лимит (число allocations, pinned memory, fd) — INFO, большие N — SKIP |
 | **T7** `nonresident_read` | Что возвращает чтение незабинженного блока | Для PRT-семантики (дыры должны читаться нулями) |
 
 Статусы:
@@ -103,7 +103,14 @@ cat /sys/module/udmabuf/parameters/size_limit_mb   # 64 во всех релиз
 - **ERROR** — неожиданная ошибка API, результат неизвестен.
 - **INFO** — измерение.
 
-Код выхода 1, если есть FAIL или ERROR.
+Коды выхода probe: 0 — нет FAIL и ERROR; 1 — есть FAIL или ERROR (с `--validate` любая ошибка
+validation layers тоже считается ERROR); 2 — ошибка настройки (нет устройства и т.п.).
+`run_e0b.sh` сначала всегда собирает tarball, затем возвращает код probe. Если упал только
+validation-прогон (`E0B_VALIDATE=1`), скрипт возвращает 3.
+
+Host-pointer import выполняется, только если указатель и размер кратны runtime
+`minImportedHostPointerAlignment`. Иначе вариант получает UNSUPPORTED с причиной, и вызов Vulkan
+не делается.
 
 ## Ожидания (гипотезы, которые проверяются)
 

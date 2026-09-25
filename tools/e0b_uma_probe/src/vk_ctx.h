@@ -154,6 +154,12 @@ public:
     uint32_t PickHostType(uint32_t bits) const;
     uint32_t PickDeviceType(uint32_t bits) const;
 
+    /// True when both ptr and size are multiples of the runtime minImportedHostPointerAlignment.
+    bool HostImportAligned(const void* ptr, VkDeviceSize size) const {
+        const VkDeviceSize a = min_host_ptr_align ? min_host_ptr_align : 1;
+        return reinterpret_cast<uintptr_t>(ptr) % a == 0 && size % a == 0;
+    }
+
     /// Imports host memory. `required_bits` are the types the consumer (sparse arena or plain
     /// buffer) accepts; an empty intersection is reported without allocating unless
     /// --force-type was given.

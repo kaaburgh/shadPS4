@@ -153,6 +153,14 @@ static void HostPointerMatrix(Probe& p) {
         {"memfd_guest_va(alias)", p.gm.Gva(va)},
     };
     for (const auto& s : sources) {
+        if (!ctx.HostImportAligned(s.ptr, len)) {
+            p.r.Fact(std::string("host[") + s.name + "]",
+                     Sprintf("<skipped: pointer %s / size %s not a multiple of "
+                             "minImportedHostPointerAlignment %s>",
+                             Hex(reinterpret_cast<uintptr_t>(s.ptr)).c_str(), Hex(len).c_str(),
+                             Hex(ctx.min_host_ptr_align).c_str()));
+            continue;
+        }
         VkMemoryHostPointerPropertiesEXT hp{VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT};
         const VkResult pr = ctx.GetHostPtrProps(
             ctx.device, VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_ALLOCATION_BIT_EXT, s.ptr, &hp);
@@ -161,7 +169,7 @@ static void HostPointerMatrix(Probe& p) {
         // Trial import with any allowed type: answers "does the kernel/driver accept this
         // pointer at all" independently of sparse compatibility.
         Memory m = ctx.ImportHost(s.ptr, len, ~0u, false);
-        v += Sprintf(", import %s", m.mem ? "OK" : ResultName(m.result));
+        v += ", import " + (m.mem ? std::string("OK") : m.note);
         ctx.Free(m);
         v += ", sparse-compatible types " + TypeBits(hp.memoryTypeBits & sparse_bits);
         p.r.Fact(std::string("host[") + s.name + "]", v);
