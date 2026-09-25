@@ -10,6 +10,11 @@ SPDX-License-Identifier: GPL-2.0-or-later
 > Это уже **после** #5047 *и* после #5100 (`buffer_cache: Rework memory tracker and implement
 > batched uploads`), #5069 (uffd) и #5092 (invalidate images after raw buffer writes).
 > Все ссылки `file:line` ниже проверены на `e4ca349`. На более новой базе перепроверьте их.
+>
+> **Ревизия 2** учитывает второй независимый review (Sol). Исправлено: ограничение
+> `VA ≡ PA (mod 64 KiB)` было сформулировано слишком сильно; неточно было обоснование CPU-когерентности
+> для udmabuf; указаны версии ядра для лимита udmabuf; для E1 выбран другой примитив отложенных
+> операций; убраны преждевременные kill-критерии. Подробности — в §8.
 
 ---
 
@@ -30,11 +35,16 @@ SPDX-License-Identifier: GPL-2.0-or-later
    в #2819 прямо это фиксировала. Для RADV (Vega UMA) нужен **другой механизм**: `udmabuf` (memfd →
    dma-buf) + `VK_EXT_external_memory_dma_buf`. Поэтому PoC на RTX с `VK_EXT_external_memory_host`
    ничего не говорит про AMD-путь. Feasibility на AMD надо проверять с первого дня, а не на шаге 9.
-4. **Sparse + shared memory имеет жёсткое ограничение гранулярности.** Sparse block — 64 KiB
-   (RADV: проверено в исходниках; на NVIDIA обычно так же). Guest отображает память кусками по 16 KiB.
-   Блок можно сделать shared, только если его VA→PA непрерывен **и** `VA ≡ PA (mod 64 KiB)`.
-   Остальные блоки должны остаться mirrored. Значит, per-block policy нужна с самого начала,
-   это не «потом».
+4. **Sparse + shared memory упирается в гранулярность.** Sparse block — 64 KiB (RADV: проверено в
+   исходниках; на NVIDIA обычно так же), а guest отображает память кусками по 16 KiB. Требование
+   Vulkan относится к `(resourceOffset, memoryOffset, size)` **внутри `VkDeviceMemory`**, а не к PA.
+   - При **крупных** импортах PA-чанков (дёшево, мало объектов) блок шарится, только если VA→PA
+     непрерывен и `VA ≡ PA (mod 64 KiB)`.
+   - Остальные блоки можно покрыть **сшитыми** импортами: `UDMABUF_CREATE_LIST` на AMD, import
+     guest-VA диапазона на NVIDIA. Цена — число объектов, re-import на каждый remap и стоимость BO list
+     на submit (§3.3).
+   - Непокрываемые блоки (без memfd) остаются mirrored.
+   Значит, per-block policy нужна с самого начала, это не «потом».
 5. **Refactor (шаг 2) до feasibility не делать.** Правильную границу абстракции задают вещи, которых
    в текущем коде нет вовсе: rebind/unbind с ожиданием in-flight работы, per-block policy,
    PA-индексированная таблица import'ов, hazard tracking по timeline. Refactor «вслепую» почти
@@ -117,7 +127,8 @@ non-snooped доступ как Onion/Garlic, открытый драйвер, �
 скоростью итераций, но sysmem-через-PCIe имеет противоположный UMA профиль производительности.
 
 **(c) Шаги 4–5 не учитывают ограничения sparse.**
-- гранулярность 64 KiB и сравнимость `VA ≡ PA (mod 64 KiB)` (§3.3);
+- гранулярность 64 KiB: при bulk-импорте нужна сравнимость `VA ≡ PA (mod 64 KiB)`, иначе нужен
+  сшитый импорт со своей ценой (§3.3);
 - bind одной памяти в два arena offset'а требует `sparseResidencyAliased` и
   `VK_BUFFER_CREATE_SPARSE_ALIASED_BIT`. Arenas сейчас создаются без этого флага
   (`buffer.cpp:108-110`);
@@ -213,7 +224,8 @@ Capability запрашивается через `vkGetPhysicalDeviceExternalBuf
   `memoryTypeBits` sparse-буфера, созданного с external handle type. NVIDIA держит DEVICE_LOCAL и
   HOST_VISIBLE типы раздельно и сужает `memoryTypeBits` по видам ресурсов. Пересечение может
   оказаться пустым. **Это go/no-go вопрос первого дня** (E0b, §6). Если пусто — план B ниже.
-- **Гранулярность** — фундаментальное ограничение на обоих вендорах (§3.3).
+- **Гранулярность** 64 KiB действует на обоих вендорах. Но это ограничение на раскладку
+  `VkDeviceMemory`, а не на guest PA: сшитые импорты его снимают, платя числом объектов (§3.3).
 - **Aliases внутри sparse** требуют `sparseResidencyAliased` + `SPARSE_ALIASED_BIT`, иначе нет
   гарантии data consistency. Даже с флагом нужны memory dependencies между записью через один alias
   и доступом через другой (global memory barrier этого достаточно).
@@ -231,8 +243,8 @@ Capability запрашивается через `vkGetPhysicalDeviceExternalBuf
 
 | Механизм | NVIDIA (5070 Ti) | RADV (Vega) | Aliases | Замечания |
 |---|---|---|---|---|
-| `VK_EXT_external_memory_host` на **`backing_base`-чанки** | вероятно да (pin shmem страниц), **проверить** | **нет**: `ANONONLY` → `-EPERM` на memfd | да (ключ по PA) | импортировать канонический `backing_base`, а **не** guest VA (§4, урок #2819). Pin заселяет страницы → импортировать лениво |
-| **`udmabuf`** (memfd → dma-buf) + `VK_EXT_external_memory_dma_buf` | неизвестно (dma-buf import у NVIDIA исторически ограничен), **проверить** | **да, основной кандидат** | да | нужен `memfd_create(..., MFD_ALLOW_SEALING)` + `F_SEAL_SHRINK` (сейчас memfd создаётся с `0`, и sealing запрещён); доступ к `/dev/udmabuf` (часто `root:kvm`); проверить `size_limit_mb`; страницы pin'ятся (`memfd_pin_folios`) → лениво, чанками. Нет MMU-notifier stall'ов |
+| `VK_EXT_external_memory_host` на **`backing_base`-чанки** | вероятно да (pin shmem страниц), **проверить** | **нет**: `ANONONLY` → `-EPERM` на memfd | да (ключ по PA) | основной вариант — чанки канонического `backing_base`. Для блоков без `VA ≡ PA (mod 64K)` можно импортировать **guest VA диапазон**: host-mapping guest'а уже «сшит» из memfd-страниц. Но такой import привязан к mapping'у и требует re-import на каждый remap (урок #2819). Pin заселяет страницы → импортировать лениво |
+| **`udmabuf`** (memfd → dma-buf) + `VK_EXT_external_memory_dma_buf` | неизвестно (dma-buf import у NVIDIA исторически ограничен), **проверить** | **да, основной кандидат** | да | нужен `memfd_create(..., MFD_ALLOW_SEALING)` + `F_SEAL_SHRINK` (сейчас memfd создаётся с `0`, и sealing запрещён); доступ к `/dev/udmabuf` (часто `root:kvm`); **лимит 64 MiB на dma-buf во всех релизных ядрах по v7.2** (§3.5); страницы pin'ятся (`memfd_pin_folios`) → лениво, чанками. `UDMABUF_CREATE_LIST` сшивает до 1024 произвольных 4 KiB-выровненных кусков memfd в один dma-buf (§3.3). Нет MMU-notifier stall'ов |
 | Vulkan-owned memory + `VK_EXT_map_memory_placed` | есть в драйверах, проверить `memoryMapRangePlaced` | `memoryMapPlaced = true`, **`memoryMapRangePlaced = false`** | **нет**: одна map на `VkDeviceMemory` (`VUID-vkMapMemory-memory-00678`) | переворачивает владение guest-physical памятью. Нельзя с host-imported памятью (`VUID-VkMemoryMapInfo-flags-09575`). Как основной путь не подходит |
 | Vulkan-owned + export dma-buf + свой `mmap` в guest VA | нет (NVIDIA opaque/dma-buf не mmap'ится userspace'ом, насколько известно) | технически да | да | то же переворачивание владения, упирается в GTT-лимиты; как вторая фаза |
 | ReBAR (`DEVICE_LOCAL \| HOST_VISIBLE`) для **WC_GARLIC** диапазонов | да | n/a | как у map_placed | интересная **вторая фаза для dGPU**: Garlic на PS4 тоже WC для CPU, игры не читают его CPU'ем. VRAM-скорость для GPU. Aliases не поддержаны |
@@ -260,9 +272,17 @@ Capability запрашивается через `vkGetPhysicalDeviceExternalBuf
 2. **Guest sync translation — это не «перевести fence'ы», а переделать всё из §1.1.** Задерживать
    *все* label writes и IRQ до completion, но уметь разрешать CP-side WaitRegMem без host-ожидания
    (§5, E1).
-3. **Host coherence.** Требовать `HOST_COHERENT` memory type. Импортированная память на RADV
-   (GTT cached) и на NVIDIA (sysmem) coherent. Для non-coherent типов понадобилось бы flush'ить
-   записанные CPU диапазоны, а для этого снова нужен write tracking.
+3. **CPU cache coherence.** `HOST_COHERENT` — неверное формальное обоснование: это свойство
+   относится к `vkMapMemory`-mapping'у, а guest CPU ходит через **свой** memfd-mapping.
+   - Для udmabuf на amdgpu настоящее основание такое. Foreign dma-buf импортируется без USWC
+     (`amdgpu_dma_buf_create_obj`, `flags = 0` для не-amdgpu exporter'а) → `ttm_cached` →
+     GPU PTE получают `AMDGPU_PTE_SNOOPED` (`amdgpu_ttm_tt_pde_flags`), плюс x86 DMA coherence.
+   - Для NVIDIA host import — x86 PCIe snooping. На x86 CPU-кэши физически тегированы, поэтому два
+     разных VA одного PA (`backing_base` и guest VA) когерентны.
+   - `DMA_BUF_IOCTL_SYNC` на udmabuf этого **не** обеспечивает (§3.5). Всё сказанное специфично для
+     x86. На ARM/Apple нужна отдельная аргументация — ещё одна причина отложить Mac.
+   - Если где-то понадобится non-coherent путь, придётся flush'ить записанные CPU диапазоны, а для
+     этого снова нужен write tracking.
 4. **Vulkan-правила видимости.**
    - Host→device: host-записи до `vkQueueSubmit` видимы автоматически. Записи **после** submit уже
      отправленной работе не гарантированы. Текущая архитектура (CP разрешает ожидания до записи)
@@ -282,10 +302,10 @@ Capability запрашивается через `vkGetPhysicalDeviceExternalBuf
 
 Все они следуют из текущей VMM (`core/memory.cpp`, `core/address_space.cpp`):
 
-1. **Direct, VA/PA не сравнимы mod 64 KiB**: PA `…4000` отображён на VA `…0000`. Блок нельзя
-   забиндить. Должен сработать fallback в mirrored.
+1. **Direct, VA/PA не сравнимы mod 64 KiB**: PA `…4000` отображён на VA `…0000`. Bulk-импортом блок
+   не забиндить. Должен сработать сшитый импорт или fallback в mirrored.
 2. **Direct, склейка 16 KiB кусков**: два `MapDirectMemory` с `Fixed` встык по VA из несмежных PA
-   внутри одного 64 KiB блока.
+   внутри одного 64 KiB блока. Тот же выбор: сшивка или mirrored.
 3. **Flexible**: `fmem_map` фрагментируется. Один flexible VMA может состоять из нескольких
    несмежных PA-кусков (`memory.cpp:606-646`, по 16 KiB). Отдельно проверить, даёт ли guest вообще
    GPU-доступ к flexible (shadPS4 вызывает `rasterizer->MapMemory` для любого типа в пределах 40 бит).
@@ -391,8 +411,12 @@ Capability запрашивается через `vkGetPhysicalDeviceExternalBuf
      **PS4 memory type** (WB_ONION/WC_GARLIC, `PhysicalMemoryArea::memory_type`). Гонять в
      `Disabled` и в `Precise`.
   2. *Shareability census:* для каждого GPU-используемого 64 KiB блока определить класс:
-     `{VA→PA непрерывен и сравним mod 64K; непрерывен, но не сравним; фрагментирован; частично
-     unmapped; без memfd-backing; aliased}`.
+     `{direct-importable (непрерывен и сравним mod 64K); stitchable (memfd-backed, но
+     фрагментирован или не сравним); partially unmapped; без memfd-backing; exact alias; shifted
+     или overlapping alias}`. Отдельно посчитать **стоимость**: сколько сшитых объектов понадобилось
+     бы, если сшивать по VMA-прогонам, а не по блокам, и как часто они инвалидируются remap'ами.
+     Пока E0b не показал реальную стоимость сшивки, долю «shareable» как kill-критерий не
+     использовать.
   3. *VMM churn:* map/unmap/remap/pool commit/decommit в секунду для GPU-visible диапазонов.
 
   Это даёт числа, которые решают судьбу проекта: сколько трафика Bloodborne *вообще* можно сделать
@@ -405,14 +429,27 @@ Capability запрашивается через `vkGetPhysicalDeviceExternalBuf
   `sparseResidencyAliased`; `residencyNonResidentStrict`; `minImportedHostPointerAlignment`. Затем
   функциональный тест: bind импортированного чанка в sparse arena **в два offset'а**, BDA,
   compute-шейдер читает A и пишет B, CPU проверяет через memfd-mapping **по третьему VA** (alias).
-  Шаги 3–5 плана сжимаются в эту одну программу.
+  Шаги 3–5 плана сжимаются в эту одну программу. Добавить (по review Sol):
+  - `UDMABUF_CREATE_LIST`: 4×16 KiB из разнесённых PA → один 64 KiB блок; PA offset, не
+    выровненный на 64K;
+  - overlapping aliases: два сшитых dma-buf с общими страницами, запись через один, **barrier**,
+    чтение через другой, и тот же сценарий без barrier;
+  - доступ CPU через исходный memfd-mapping;
+  - на AMD проверить, что swiotlb не используется (`dmesg`, debugfs swiotlb);
+  - стоимость submit в зависимости от числа импортированных BO (1 / 100 / 1 000 / 10 000);
+  - чтение `size_limit_mb` и `list_limit` в runtime.
+  Главная машина для E0b — обе, 3300U в том числе: производительность здесь не нужна.
 
 - **E1 — fence-at-completion на текущем mirrored backend.** Задерживать label writes и EOP/EOS/
-  ReleaseMem IRQ до завершения host tick'а. `Scheduler::DeferOperation` уже есть
-  (`vk_scheduler.h:433`), плюс flush на каждом таком событии. CP-side WaitRegMem разрешать по
-  таблице pending-записей. Измерить frame time и hazard census: WAR/RAW должны стать ≈0. Это
-  **настоящий go/no-go** всего направления, и полезен он даже без shared memory: даёт честные
-  fence'ы вместо эвристик #3404.
+  ReleaseMem IRQ до завершения host tick'а. Примитив — `Scheduler::DeferPriorityOperation`
+  (`vk_scheduler.h:440-446`): у него есть свой поток, который ждёт timeline semaphore
+  (`vk_scheduler.cpp:251-273`). **Не** `DeferOperation`: он выполняется только на submit или
+  `PopPendingOperations` (`vk_scheduler.cpp:134-141`). Если CP простаивает, ожидая guest'а, а guest
+  ждёт label, label не запишется никогда. После каждого отложенного сигнала нужен flush, иначе tick
+  не будет отправлен на GPU. CP-side WaitRegMem разрешать консервативно и логировать каждый путь
+  разрешения (§5). Критерий — корректность: WAR/RAW в census ≈0, без регрессий. Производительность
+  **измеряется с разложением** (§5), но не является kill-критерием. E1 полезен и без shared memory:
+  даёт честные fence'ы вместо эвристик #3404.
 
 ---
 
@@ -446,10 +483,28 @@ notifier'а нет.
 - `block_size = max(sparse alignment, 16 KiB)` (`buffer_cache.cpp:70`). RADV:
   `RADV_SPARSE_BUFFER_ALIGNMENT = 64 KiB`. NVIDIA: проверить `reqs.alignment` (обычно 64 KiB).
 - Guest выделяет VA с шагом 16 KiB по умолчанию (`memory.cpp:581`). Flexible PA-куски по 16 KiB.
-- По VUID-09491 bind блока возможен, только если **весь** 64 KiB VA-блок отображён на **непрерывный**
-  PA-диапазон и `(VA − PA) mod 64 KiB == 0`. Иначе блок остаётся mirrored. Если у отображённых 16 KiB
-  есть unmapped соседи, bind целого блока открывает GPU доступ к чужой физической памяти в этих дырах.
-- E0 должен показать, какая доля реального трафика в эту категорию не попадает.
+- VUID-09491 требует кратности 64 KiB для `resourceOffset`, `memoryOffset` и `size` **в
+  `VkDeviceMemory`**. Отсюда три класса блоков:
+  1. **Bulk import** (крупные PA-чанки `backing_base` или udmabuf по PA): блок бинжится, только если
+     весь 64 KiB VA-блок отображён на непрерывный PA и `(VA − PA) mod 64 KiB == 0`. Объектов мало,
+     remap'ы стоят только rebind.
+  2. **Stitched import:**
+     - AMD: `UDMABUF_CREATE_LIST` принимает до `list_limit = 1024` элементов с 4 KiB-выровненными
+       `offset/size` из любых memfd. Проверок пересечения нет (`udmabuf.c:350-420`), так что один
+       dma-buf может собрать произвольную раскладку, а разные dma-buf могут делить страницы.
+     - NVIDIA: host import guest-VA диапазона, который уже «сшит» mmap'ами guest'а.
+     Цена: (a) импорт привязан к mapping'у, каждый remap → новый объект; (b) число BO. На RADV
+     импортированные BO не бывают «always valid», их надо проверять на каждом CS, так что стоимость
+     submit растёт с их числом (измерить в E0b); (c) лимит размера udmabuf (§3.5). Сшивать разумно
+     по VMA-прогонам, а не по одному блоку.
+  3. **Невозможные:** VMA без memfd (Code/Stack/anon) → mirrored. Частично unmapped блоки можно
+     закрыть «жертвенной» страницей, но GPU-записи в дыры попадут туда же. Для PRT-чтений нужны
+     нули.
+- **Overlapping aliases через разные `VkDeviceMemory` находятся вне модели Vulkan.**
+  `SPARSE_ALIASED` покрывает один `VkDeviceMemory`, забинженный в несколько мест, а не два объекта с
+  общими физическими страницами. Корректность держится на global memory barrier между записью через
+  один alias и доступом через другой плюс на аппаратной когерентности. Нужен функциональный тест, а
+  при провале — fallback в mirrored.
 
 ### 3.4 Sparse, external memory и placed map: правила спецификации
 
@@ -467,8 +522,25 @@ notifier'а нет.
 
 - Требует shmem или hugetlb memfd, `F_SEAL_SHRINK` и **отсутствие** `F_SEAL_WRITE`.
 - Страницы pin'ятся через `memfd_pin_folios`.
-- В текущем mainline `size_limit_mb = INT_MAX`, `list_limit = 1024`. В старых ядрах лимит размера был
-  меньше: проверить `/sys/module/udmabuf/parameters/size_limit_mb` на обеих машинах.
+- **Лимит размера:**
+  - `size_limit_mb = 64` во **всех релизных ядрах по v7.2 включительно** (проверено на тегах v7.1 и
+    v7.2).
+  - `INT_MAX` появился только в цикле 7.3 (commit `44e9eb5a7621`, «dma-buf/udmabuf: Disable the size
+    limit by default»; mainline сейчас 7.3-rc4).
+  - По данным Sol, уже есть patch, предлагающий вернуть лимит на 256 MiB (я его не проверял).
+  - `list_limit = 1024`.
+  - Вывод: проектировать под чанки ≤ 64 MiB, а реальные значения читать в runtime из
+    `/sys/module/udmabuf/parameters/`.
+- **CPU sync.** `DMA_BUF_IOCTL_SYNC` → `begin/end_cpu_udmabuf` синхронизирует
+  **собственную** sg-таблицу udmabuf, смапленную для его misc device
+  (`ubuf->device->this_device`). Mapping importer'а (amdgpu) создаётся в `map_udmabuf` с
+  `DMA_ATTR_SKIP_CPU_SYNC` (так и в v7.2), и ioctl его не касается. На x86 (coherent DMA) обе
+  операции — no-op. Поэтому A/B-тест «с ioctl и без» на x86 ничего не покажет. Реальные условия
+  когерентности:
+  - importer DMA-coherent;
+  - нет swiotlb bounce;
+  - GPU PTE snooped (§Q6.3).
+  Их и надо проверять в E0b, плюс стресс-тест на гонки.
 - Для shadPS4 это значит: `memfd_create(..., MFD_ALLOW_SEALING)` (под `#ifdef __linux__`, в коде
   есть предупреждение про FreeBSD) и `fcntl(F_ADD_SEALS, F_SEAL_SHRINK)`.
 
@@ -505,29 +577,49 @@ shadPS4 хранит это в `PhysicalMemoryArea::memory_type` (`core/memory.h
 
 ## 5. Как сделать fence'ы точными без эвристик #3404
 
-- **Все** guest-visible GPU-записи (EOP/EOS/ReleaseMem data, WriteData, ZPass results, DmaData
-  destination) записываются в `PendingWrites{addr → (value, host_tick)}` и выполняются в guest-память
-  только при завершении `host_tick` (DeferOperation) или на GPU timeline (`vkCmdUpdateBuffer`/copy в
-  shared-блок). IRQ и equeue-события тоже отправляются по completion.
-- **CP-side WaitRegMem:** сначала проверить условие по `PendingWrites`. Если оно будет выполнено
-  pending-записью, продолжить без ожидания: у shadPS4 одна Vulkan queue, поэтому порядок
-  сохраняется. Если нет, это writer'ы-шейдеры или CPU: flush + host wait до idle, потом перепроверка.
-  Тогда deadlock невозможен по построению.
+- **Production-цель — порядок пакетов guest'а переносится в порядок host timeline** (поправка Sol).
+  - CP-записи, которые потребляет GPU (WriteData, DmaData destination), выполняются **на GPU
+    timeline в позиции пакета**: `vkCmdUpdateBuffer`/copy между соответствующими draw'ами. Для
+    семантики EOP/ReleaseMem перед записью нужен end-of-pipe barrier (`ALL_COMMANDS`), иначе запись
+    обгонит предыдущие draw'ы.
+  - Сигналы, которые наблюдает CPU (labels, IRQ, equeue), становятся видимы при завершении точки,
+    в которой они стоят. Для этого после каждого такого сигнала нужна граница submission/tick и
+    `DeferPriorityOperation`.
+  - «Всё выполнить в конце batch'а» — лишь консервативный вариант для E1, не финальная модель.
+- **CP-side WaitRegMem.** Порядок разрешения:
+  1. условие уже выполнено в памяти → продолжить;
+  2. его выполнит pending-запись из уже записанного потока → продолжить, но **вставить full
+     pipeline barrier**: одна Vulkan queue даёт порядок submission, а не порядок выполнения;
+  3. иначе writer — шейдер или guest CPU → submit и host wait, затем перепроверка; если условие всё
+     ещё не выполнено, ждать guest CPU как сейчас, не держа неотправленную работу.
+  Шаг 2 — **гипотеза, а не закон**. Семантику разных engine/queue, ABA и условия с масками нужно
+  доказать на PoC. В E1 логировать каждый путь разрешения. Нужен и oracle-режим: дополнительно
+  дождаться host completion и проверить, что память действительно удовлетворяет условию.
 - **Flip/VO labels** (`videoout/driver.cpp:236-273`): тоже убедиться, что guest видит flip только
   после host completion кадра.
 - **Unmap/remap GPU-visible диапазона:** host GPU должен дойти до последнего tick'а, использовавшего
   блок, перед rebind. Карантин PA невозможен, потому что guest выбирает PA сам.
 - Это ровно тот объём работы, которого #3404 пытался избежать эвристикой. E1 даёт его цену в числах.
+- **Разложение стоимости в E1** (вместо kill-критерия). Нужно отделить цену точной семантики от цены
+  примитивной реализации:
+  - *fence latency* — время от разбора EOP до host completion, распределение;
+  - *guest wait* — сколько guest-потоки реально ждут labels и GfxEop equeue (это неустранимая часть:
+    guest теперь видит настоящую задержку host GPU);
+  - *overhead реализации* — лишние submit'ы, барьеры, CPU-время CP.
+  Приговор выносить только по guest wait при хорошей реализации.
 
 ---
 
 ## 6. Предлагаемый порядок экспериментов
 
+Практический порядок (согласован с review Sol): **E0b → E0 → E1 → E2 → E3 → E4 → E5 → E6**. E0b и E0
+независимы, их можно вести параллельно.
+
 | # | Эксперимент | Где | Критерий успеха | Kill / pivot критерий |
 |---|---|---|---|---|
-| **E0** | Census: hazards (WAR/RAW vs host timeline), shareability 64 KiB блоков, VMM churn, memory types | `main` + счётчики, RTX | числа есть, воспроизводимы (pad replay) | < ~50% GPU buffer трафика shareable → shared только как частичная оптимизация |
-| **E0b** | Standalone Vulkan probe + функциональный bind/alias/BDA тест | обе машины | найден механизм на каждом вендоре: пересечение типов, bind, alias, CPU↔GPU через третий VA | NVIDIA: пустое пересечение → план B (BDA-only + VA-import) или только AMD |
-| **E1** | Fence-at-completion на mirrored backend | `main`, RTX, затем 3300U | WAR/RAW ≈ 0 в census; нет deadlock; цена в frame time измерена | цена неприемлема → shared backend не окупится без более хитрой схемы |
+| **E0b** | Standalone Vulkan probe + функциональный bind/alias/BDA тест, включая stitched udmabuf и overlapping aliases (§Q10) | **обе** машины с первого дня | на каждом вендоре найден механизм: пересечение типов, bind, alias, CPU↔GPU через третий VA; измерена стоимость submit от числа BO | NVIDIA: пустое пересечение → план B (BDA-only + VA-import) или только AMD |
+| **E0** | Census: hazards (WAR/RAW vs host timeline), shareability по новой классификации, стоимость сшивки, VMM churn, memory types | `main` + счётчики, RTX | числа есть, воспроизводимы (pad replay) | нет, пока E0b не дал стоимость сшивки |
+| **E1** | Fence-at-completion на mirrored backend (`DeferPriorityOperation` + flush) | `main`, RTX, затем 3300U | WAR/RAW ≈ 0; нет deadlock; нет регрессий корректности; стоимость разложена (§5) | не kill. Решение — только по неустранимому guest wait при хорошей реализации |
 | **E2** | Baseline perf (вместо шага 1): p50/p95/p99, submits, `Finish()` count/time, upload/download bytes, fault counts, binds | `main` и `main+E1` | стабильная дисперсия на N≥10 прогонах | — |
 | **E3** | Минимальная интеграция: shared policy только для shareable + Onion блоков; PA import table; VMM→bind с ожиданием; arenas с external + `SPARSE_ALIASED`; mirror-машинерия **не пишет** в shared | ветка от upstream, 3300U и RTX | identity checker зелёный; alias/remap matrix (§Q7) зелёная | — |
 | **E4** | Выключить upload/download для shared-блоков; hazard tracker как диагностика | то же | 0 lost writes, 0 hazards, 0 copy bytes для shared | — |
@@ -567,7 +659,34 @@ shadPS4 хранит это в `PhysicalMemoryArea::memory_type` (`core/memory.h
 
 ---
 
-## 8. Источники
+## 8. Ревизия 2: что изменилось после review Sol
+
+Принято:
+- **Ограничение `VA ≡ PA (mod 64 KiB)` было слишком сильным.** Оно верно только для bulk-импорта
+  PA-чанков. `UDMABUF_CREATE_LIST` (AMD) и import guest-VA (NVIDIA) его снимают. Уточнение от меня:
+  цена сшивки — число объектов, re-import на remap и стоимость BO list на submit. Поэтому сшивать
+  по VMA-прогонам. Overlapping aliases через разные `VkDeviceMemory` — вне модели Vulkan (§3.3).
+- **Kill-критерии E0 (доля shareable) и E1 (цена) убраны.** E1 — эксперимент на корректность с
+  разложением стоимости (§5).
+- **Production-модель — порядок пакетов на host timeline**, а не «всё в конце batch'а». Правило
+  PendingWrites для WaitRegMem — гипотеза, её надо доказать в PoC (§5).
+- **`HOST_COHERENT` — неверное формальное обоснование** CPU-когерентности memfd-mapping'а (§Q6.3).
+- **Лимит udmabuf нельзя закладывать в дизайн**, его надо читать в runtime (§3.5).
+- **3300U — рабочая машина уже для E0b.**
+
+Уточнено или оспорено:
+- **`DMA_BUF_IOCTL_SYNC`** на udmabuf синхронизирует только собственный misc-device mapping udmabuf.
+  Mapping importer'а создаётся с `DMA_ATTR_SKIP_CPU_SYNC`. A/B-тест «с ioctl и без» на x86 поэтому
+  неинформативен. Проверять нужно swiotlb, snooped PTE (amdgpu для foreign dma-buf ставит
+  `ttm_cached` → `AMDGPU_PTE_SNOOPED`) и стресс-гонки (§3.5).
+- **Лимит 64 MiB — не «некоторые snapshots»**, а все релизные ядра по v7.2. `INT_MAX` есть только в
+  7.3-rc.
+- **Для E1 нужен `DeferPriorityOperation`, а не `DeferOperation`.** Второй выполняется только на
+  submit или `PopPendingOperations`, и при простое CP label не будет записан никогда.
+
+---
+
+## 9. Источники
 
 - Upstream shadPS4 `e4ca349`: файлы, указанные выше.
 - #2819 (исторические commit'ы `52253b45` «Import memory», `87b37712` «Removed host buffers»):
@@ -578,7 +697,8 @@ shadPS4 хранит это в `PhysicalMemoryArea::memory_type` (`core/memory.h
 - libdrm `amdgpu/amdgpu_bo.c` (`amdgpu_create_bo_from_user_mem`): https://gitlab.freedesktop.org/mesa/libdrm
 - Mesa RADV (`radv_buffer.c`, `radv_device.c`, `radv_physical_device.c`, `radv_formats.c`,
   `winsys/amdgpu/radv_amdgpu_bo.c`, `radv_constants.h`, `ac_gpu_info.c`): https://gitlab.freedesktop.org/mesa/mesa
-- Linux `drivers/gpu/drm/amd/amdgpu/amdgpu_ttm.c`, `amdgpu_hmm.c`, `drivers/dma-buf/udmabuf.c`:
+- Linux `drivers/gpu/drm/amd/amdgpu/amdgpu_ttm.c`, `amdgpu_hmm.c`, `amdgpu_dma_buf.c`,
+  `drivers/dma-buf/udmabuf.c` (mainline 7.3-rc4 и теги v7.1/v7.2; commit `44e9eb5a7621`):
   https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
 - Vulkan registry `validusage.json` (KhronosGroup/Vulkan-Headers).
 - Vita3K memory mapping (BDA + external host): https://github.com/Vita3K/Vita3K/pull/2272
