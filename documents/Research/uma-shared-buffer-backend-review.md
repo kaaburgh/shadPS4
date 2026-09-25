@@ -617,7 +617,7 @@ shadPS4 хранит это в `PhysicalMemoryArea::memory_type` (`core/memory.h
 
 | # | Эксперимент | Где | Критерий успеха | Kill / pivot критерий |
 |---|---|---|---|---|
-| **E0b** | Standalone Vulkan probe + функциональный bind/alias/BDA тест, включая stitched udmabuf и overlapping aliases (§Q10) | **обе** машины с первого дня | на каждом вендоре найден механизм: пересечение типов, bind, alias, CPU↔GPU через третий VA; измерена стоимость submit от числа BO | NVIDIA: пустое пересечение → план B (BDA-only + VA-import) или только AMD |
+| **E0b** | Standalone Vulkan probe + функциональный bind/alias/BDA тест, включая stitched udmabuf и overlapping aliases (§Q10). Реализован: `tools/e0b_uma_probe/` | **обе** машины с первого дня | на каждом вендоре найден механизм: пересечение типов, bind, alias, CPU↔GPU через третий VA; измерена стоимость submit от числа BO | NVIDIA: пустое пересечение → план B (BDA-only + VA-import) или только AMD |
 | **E0** | Census: hazards (WAR/RAW vs host timeline), shareability по новой классификации, стоимость сшивки, VMM churn, memory types | `main` + счётчики, RTX | числа есть, воспроизводимы (pad replay) | нет, пока E0b не дал стоимость сшивки |
 | **E1** | Fence-at-completion на mirrored backend (`DeferPriorityOperation` + flush) | `main`, RTX, затем 3300U | WAR/RAW ≈ 0; нет deadlock; нет регрессий корректности; стоимость разложена (§5) | не kill. Решение — только по неустранимому guest wait при хорошей реализации |
 | **E2** | Baseline perf (вместо шага 1): p50/p95/p99, submits, `Finish()` count/time, upload/download bytes, fault counts, binds | `main` и `main+E1` | стабильная дисперсия на N≥10 прогонах | — |

@@ -1,0 +1,82 @@
+// SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+// Pattern verify/write/zero-check through buffer device addresses.
+// Mirrors how shadPS4 reaches guest memory through the BDA page table.
+
+#version 460
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+
+layout(local_size_x = 64) in;
+
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer Words {
+    uint w[];
+};
+
+layout(buffer_reference, std430, buffer_reference_align = 4) buffer Slot {
+    uint mismatches;
+    uint first_bad;
+    uint first_value;
+    uint checked;
+};
+
+layout(push_constant, std430) uniform Params {
+    uint64_t src;
+    uint64_t dst;
+    uint64_t slot;
+    uint count;
+    uint seed_in;
+    uint seed_out;
+    uint mode;
+} pc;
+
+const uint MODE_VERIFY = 1u;
+const uint MODE_WRITE = 2u;
+const uint MODE_NONZERO = 4u;
+
+uint pattern(uint i, uint seed) {
+    uint x = i * 0x9E3779B9u + seed;
+    x ^= x >> 16;
+    x *= 0x7FEB352Du;
+    x ^= x >> 15;
+    x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
+}
+
+void main() {
+    Words src = Words(pc.src);
+    Words dst = Words(pc.dst);
+    Slot slot = Slot(pc.slot);
+    const uint stride = gl_NumWorkGroups.x * 64u;
+    uint checked = 0u;
+    for (uint i = gl_GlobalInvocationID.x; i < pc.count; i += stride) {
+        if ((pc.mode & MODE_VERIFY) != 0u) {
+            const uint v = src.w[i];
+            checked++;
+            if (v != pattern(i, pc.seed_in)) {
+                atomicAdd(slot.mismatches, 1u);
+                if (atomicMin(slot.first_bad, i) > i) {
+                    slot.first_value = v;
+                }
+            }
+        }
+        if ((pc.mode & MODE_NONZERO) != 0u) {
+            const uint v = src.w[i];
+            checked++;
+            if (v != 0u) {
+                atomicAdd(slot.mismatches, 1u);
+                if (atomicMin(slot.first_bad, i) > i) {
+                    slot.first_value = v;
+                }
+            }
+        }
+        if ((pc.mode & MODE_WRITE) != 0u) {
+            dst.w[i] = pattern(i, pc.seed_out);
+        }
+    }
+    if (checked != 0u) {
+        atomicAdd(slot.checked, checked);
+    }
+}
