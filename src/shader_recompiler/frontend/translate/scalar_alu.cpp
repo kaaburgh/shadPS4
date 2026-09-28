@@ -307,7 +307,8 @@ void Translator::S_MIN_U32(bool is_signed, const GcnInst& inst) {
     const IR::U32 src1{GetSrc(inst.src[1])};
     const IR::U32 result = ir.IMin(src0, src1, is_signed);
     SetDst(inst.dst[0], result);
-    ir.SetScc(ir.IEqual(result, src0));
+    // SCC is set only if S0 is the value selected, which is not the case when both are equal.
+    ir.SetScc(ir.ILessThan(src0, src1, is_signed));
 }
 
 void Translator::S_MAX_U32(bool is_signed, const GcnInst& inst) {
@@ -315,7 +316,8 @@ void Translator::S_MAX_U32(bool is_signed, const GcnInst& inst) {
     const IR::U32 src1{GetSrc(inst.src[1])};
     const IR::U32 result = ir.IMax(src0, src1, is_signed);
     SetDst(inst.dst[0], result);
-    ir.SetScc(ir.IEqual(result, src0));
+    // SCC is set only if S0 is the value selected, which is not the case when both are equal.
+    ir.SetScc(ir.IGreaterThan(src0, src1, is_signed));
 }
 
 void Translator::S_CSELECT_B32(const GcnInst& inst) {
