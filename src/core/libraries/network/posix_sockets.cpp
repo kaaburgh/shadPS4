@@ -1,6 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
 #include <vector>
 #include <common/assert.h>
 #include "common/error.h"
@@ -205,6 +208,29 @@ static int convertOrbisFlagsToPosix(int sock_type, int sce_flags) {
     return posix_flags;
 }
 
+#ifndef _WIN32
+// The guest OrbisNetMsghdr has the FreeBSD layout, which differs from the host msghdr on some
+// platforms (glibc uses size_t for msg_iovlen and msg_controllen), and msg_name holds a BSD
+// sockaddr. Guest messages are therefore passed to the host through a separate msghdr. The iovec
+// array can be passed as is.
+static_assert(sizeof(OrbisNetIovec) == sizeof(iovec));
+static_assert(offsetof(OrbisNetIovec, iov_base) == offsetof(iovec, iov_base));
+static_assert(offsetof(OrbisNetIovec, iov_len) == offsetof(iovec, iov_len));
+
+static int ConvertPosixMsgFlagsToOrbis(int posix_flags) {
+    int orbis_flags = 0;
+    if (posix_flags & MSG_OOB)
+        orbis_flags |= ORBIS_NET_MSG_OOB;
+    if (posix_flags & MSG_EOR)
+        orbis_flags |= ORBIS_NET_MSG_EOR;
+    if (posix_flags & MSG_TRUNC)
+        orbis_flags |= ORBIS_NET_MSG_TRUNC;
+    if (posix_flags & MSG_CTRUNC)
+        orbis_flags |= ORBIS_NET_MSG_CTRUNC;
+    return orbis_flags;
+}
+#endif
+
 // On Windows, MSG_DONTWAIT is not handled natively by recv/send.
 // This function uses select() with zero timeout to simulate non-blocking behavior.
 static int socket_is_ready(int sock, bool is_read = true) {
@@ -284,8 +310,20 @@ int PosixSocket::SendMessage(const OrbisNetMsghdr* msg, int flags) {
     return totalSent;
 
 #else
+    sockaddr addr{};
+    msghdr host_msg{};
+    if (msg->msg_name != nullptr) {
+        convertOrbisNetSockaddrToPosix(static_cast<const OrbisNetSockaddr*>(msg->msg_name), &addr);
+        host_msg.msg_name = &addr;
+        host_msg.msg_namelen = sizeof(sockaddr_in);
+    }
+    host_msg.msg_iov = reinterpret_cast<iovec*>(msg->msg_iov);
+    host_msg.msg_iovlen = msg->msg_iovlen;
+    host_msg.msg_control = msg->msg_control;
+    host_msg.msg_controllen = msg->msg_controllen;
+
     int native_flags = convertOrbisFlagsToPosix(socket_type, flags);
-    int res = sendmsg(sock, reinterpret_cast<const msghdr*>(msg), native_flags);
+    int res = sendmsg(sock, &host_msg, native_flags);
     return ConvertReturnErrorCode(res);
 #endif
 }
@@ -377,8 +415,34 @@ int PosixSocket::ReceiveMessage(OrbisNetMsghdr* msg, int flags) {
     return totalReceived;
 
 #else
+    sockaddr_storage addr{};
+    msghdr host_msg{};
+    if (msg->msg_name != nullptr) {
+        host_msg.msg_name = &addr;
+        host_msg.msg_namelen = sizeof(addr);
+    }
+    host_msg.msg_iov = reinterpret_cast<iovec*>(msg->msg_iov);
+    host_msg.msg_iovlen = msg->msg_iovlen;
+    host_msg.msg_control = msg->msg_control;
+    host_msg.msg_controllen = msg->msg_controllen;
+
     int native_flags = convertOrbisFlagsToPosix(socket_type, flags);
-    int res = recvmsg(sock, reinterpret_cast<msghdr*>(msg), native_flags);
+    int res = recvmsg(sock, &host_msg, native_flags);
+    if (res >= 0) {
+        if (msg->msg_name != nullptr) {
+            if (host_msg.msg_namelen == 0) {
+                msg->msg_namelen = 0;
+            } else {
+                OrbisNetSockaddr orbis_addr{};
+                convertPosixSockaddrToOrbis(reinterpret_cast<sockaddr*>(&addr), &orbis_addr);
+                std::memcpy(msg->msg_name, &orbis_addr,
+                            std::min<size_t>(msg->msg_namelen, sizeof(OrbisNetSockaddrIn)));
+                msg->msg_namelen = sizeof(OrbisNetSockaddrIn);
+            }
+        }
+        msg->msg_controllen = static_cast<u32>(host_msg.msg_controllen);
+        msg->msg_flags = ConvertPosixMsgFlagsToOrbis(host_msg.msg_flags);
+    }
     return ConvertReturnErrorCode(res);
 #endif
 }
