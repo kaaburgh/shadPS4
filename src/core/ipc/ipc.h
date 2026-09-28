@@ -12,7 +12,6 @@
 
 class IPC {
     bool enabled{false};
-    std::jthread input_thread{};
 
     std::binary_semaphore run_semaphore{0};
     std::binary_semaphore start_semaphore{0};
@@ -39,5 +38,5 @@ public:
     void SendRestart(const std::vector<std::string>& args);
 
 private:
-    [[noreturn]] void InputLoop();
+    void InputLoop();
 };
