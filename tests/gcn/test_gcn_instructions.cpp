@@ -783,6 +783,45 @@ TEST_F(GcnTest, bitcmp1_b64_bit32) {
     EXPECT_EQ(*result, 1U);
 }
 
+// S_MIN_* / S_MAX_* set SCC only when the first operand is the one selected, which does not
+// happen when both operands are equal (D = S0 < S1 ? S0 : S1).
+namespace {
+
+u32 RunScalarMinMaxScc(OpcodeSOP2 op, u32 src0, u32 src1) {
+    auto runner = gcn_test::Runner::instance().value();
+    const std::array<u64, 3> instructions{
+        SOP2(op, SOperand7::S2, SOperand8::S0, SOperand8::S1).Get(),
+        SOP2(OpcodeSOP2::S_CSELECT_B32, SOperand7::S0, SOperand8::Const1, SOperand8::Const0).Get(),
+        VOP1(OpcodeVOP1::V_MOV_B32, VOperand8::V0, SOperand9::S0).Get(),
+    };
+    const auto spirv = TranslateToSpirv(instructions);
+    const auto result = runner->run<u32>(spirv, std::array{src0, src1, 0U, 0U});
+    EXPECT_TRUE(result.has_value());
+    return result.value_or(~0U);
+}
+
+} // Anonymous namespace
+
+TEST_F(GcnTest, min_max_scc_equal_operands) {
+    for (const auto op : {OpcodeSOP2::S_MIN_U32, OpcodeSOP2::S_MAX_U32, OpcodeSOP2::S_MIN_I32,
+                          OpcodeSOP2::S_MAX_I32}) {
+        SCOPED_TRACE(testing::Message() << "op=" << std::to_underlying(op));
+        EXPECT_EQ(RunScalarMinMaxScc(op, 7U, 7U), 0U);
+        EXPECT_EQ(RunScalarMinMaxScc(op, 0xfffffffbU, 0xfffffffbU), 0U);
+    }
+}
+
+TEST_F(GcnTest, min_max_scc_selects_first_operand) {
+    EXPECT_EQ(RunScalarMinMaxScc(OpcodeSOP2::S_MIN_U32, 3U, 7U), 1U);
+    EXPECT_EQ(RunScalarMinMaxScc(OpcodeSOP2::S_MIN_U32, 7U, 3U), 0U);
+    EXPECT_EQ(RunScalarMinMaxScc(OpcodeSOP2::S_MAX_U32, 7U, 3U), 1U);
+    EXPECT_EQ(RunScalarMinMaxScc(OpcodeSOP2::S_MAX_U32, 3U, 7U), 0U);
+    EXPECT_EQ(RunScalarMinMaxScc(OpcodeSOP2::S_MIN_I32, 0xfffffffbU, 3U), 1U);
+    EXPECT_EQ(RunScalarMinMaxScc(OpcodeSOP2::S_MIN_I32, 3U, 0xfffffffbU), 0U);
+    EXPECT_EQ(RunScalarMinMaxScc(OpcodeSOP2::S_MAX_I32, 3U, 0xfffffffbU), 1U);
+    EXPECT_EQ(RunScalarMinMaxScc(OpcodeSOP2::S_MAX_I32, 0xfffffffbU, 3U), 0U);
+}
+
 TEST_F(GcnTest, subb_u32_clears_vcc) {
     auto runner = gcn_test::Runner::instance().value();
     const std::array<u64, 3> instructions{
