@@ -713,6 +713,62 @@ TEST_F(GcnTest, addk_i32_overflow_scc) {
     EXPECT_EQ(*no_overflow, 0U);
 }
 
+// S_CMPK_*_U32 compare against the zero-extended 16-bit immediate, the I32 variants against the
+// sign-extended one.
+TEST_F(GcnTest, cmpk_eq_u32_zero_extends_imm) {
+    auto runner = gcn_test::Runner::instance().value();
+    const std::array<u64, 3> instructions{
+        SOPK(OpcodeSOPK::S_CMPK_EQ_U32, SOperand7::S0, 0x8000).Get(),
+        SOP2(OpcodeSOP2::S_CSELECT_B32, SOperand7::S0, SOperand8::Const1, SOperand8::Const0).Get(),
+        VOP1(OpcodeVOP1::V_MOV_B32, VOperand8::V0, SOperand9::S0).Get(),
+    };
+    const auto spirv = TranslateToSpirv(instructions);
+
+    auto equal = runner->run<u32>(spirv, std::array{0x8000U, 0U, 0U, 0U});
+    ASSERT_TRUE(equal.has_value());
+    EXPECT_EQ(*equal, 1U);
+
+    auto sign_extended = runner->run<u32>(spirv, std::array{0xffff8000U, 0U, 0U, 0U});
+    ASSERT_TRUE(sign_extended.has_value());
+    EXPECT_EQ(*sign_extended, 0U);
+}
+
+TEST_F(GcnTest, cmpk_lt_u32_zero_extends_imm) {
+    auto runner = gcn_test::Runner::instance().value();
+    const std::array<u64, 3> instructions{
+        SOPK(OpcodeSOPK::S_CMPK_LT_U32, SOperand7::S0, 0x8000).Get(),
+        SOP2(OpcodeSOP2::S_CSELECT_B32, SOperand7::S0, SOperand8::Const1, SOperand8::Const0).Get(),
+        VOP1(OpcodeVOP1::V_MOV_B32, VOperand8::V0, SOperand9::S0).Get(),
+    };
+    const auto spirv = TranslateToSpirv(instructions);
+
+    auto above = runner->run<u32>(spirv, std::array{0x9000U, 0U, 0U, 0U});
+    ASSERT_TRUE(above.has_value());
+    EXPECT_EQ(*above, 0U);
+
+    auto below = runner->run<u32>(spirv, std::array{0x7fffU, 0U, 0U, 0U});
+    ASSERT_TRUE(below.has_value());
+    EXPECT_EQ(*below, 1U);
+}
+
+TEST_F(GcnTest, cmpk_eq_i32_sign_extends_imm) {
+    auto runner = gcn_test::Runner::instance().value();
+    const std::array<u64, 3> instructions{
+        SOPK(OpcodeSOPK::S_CMPK_EQ_I32, SOperand7::S0, 0x8000).Get(),
+        SOP2(OpcodeSOP2::S_CSELECT_B32, SOperand7::S0, SOperand8::Const1, SOperand8::Const0).Get(),
+        VOP1(OpcodeVOP1::V_MOV_B32, VOperand8::V0, SOperand9::S0).Get(),
+    };
+    const auto spirv = TranslateToSpirv(instructions);
+
+    auto sign_extended = runner->run<u32>(spirv, std::array{0xffff8000U, 0U, 0U, 0U});
+    ASSERT_TRUE(sign_extended.has_value());
+    EXPECT_EQ(*sign_extended, 1U);
+
+    auto zero_extended = runner->run<u32>(spirv, std::array{0x8000U, 0U, 0U, 0U});
+    ASSERT_TRUE(zero_extended.has_value());
+    EXPECT_EQ(*zero_extended, 0U);
+}
+
 TEST_F(GcnTest, bitcmp1_b64_bit32) {
     auto runner = gcn_test::Runner::instance().value();
     const std::array<u64, 3> instructions{
