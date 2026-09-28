@@ -454,7 +454,10 @@ void Translator::S_BFE(const GcnInst& inst, bool is_signed) {
     const IR::U32 src0{GetSrc(inst.src[0])};
     const IR::U32 src1{GetSrc(inst.src[1])};
     const IR::U32 offset{ir.BitwiseAnd(src1, ir.Imm32(0x1F))};
-    const IR::U32 count{ir.BitFieldExtract(src1, ir.Imm32(16), ir.Imm32(7))};
+    const IR::U32 width{ir.BitFieldExtract(src1, ir.Imm32(16), ir.Imm32(7))};
+    // A field running past bit 31 extracts the remaining upper bits. Clamp the count so that
+    // offset + count never exceeds 32, as that is undefined for the SPIR-V bitfield extract.
+    const IR::U32 count{ir.IMin(width, ir.ISub(ir.Imm32(32), offset), false)};
     const IR::U32 result{ir.BitFieldExtract(src0, offset, count, is_signed)};
     SetDst(inst.dst[0], result);
     ir.SetScc(ir.INotEqual(result, ir.Imm32(0)));
