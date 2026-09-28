@@ -38,6 +38,11 @@ void TestResetSystemSwVersion() {
     g_test_system_sw_version = CURRENT_FIRMWARE_VERSION;
 }
 
+s32* PS4_SYSV_ABI __Error() {
+    thread_local s32 g_errno = 0;
+    return &g_errno;
+}
+
 s32 PS4_SYSV_ABI sceKernelGetSystemSwVersion(SwVersionStruct* ret) {
     if (ret == nullptr) {
         return 0;
