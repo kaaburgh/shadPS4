@@ -756,6 +756,39 @@ TEST_F(GcnTest, subb_u32_scc_wrap) {
     EXPECT_EQ(*result, 1U);
 }
 
+// S_BFE_*: S1[4:0] is the offset, S1[22:16] the width. A field that runs past bit 31 yields the
+// remaining upper bits (D = S0 >> offset, arithmetic for I32).
+namespace {
+
+u32 RunScalarBfe(OpcodeSOP2 op, u32 data, u32 offset, u32 width) {
+    auto runner = gcn_test::Runner::instance().value();
+    const std::array<u64, 2> instructions{
+        SOP2(op, SOperand7::S2, SOperand8::S0, SOperand8::S1).Get(),
+        VOP1(OpcodeVOP1::V_MOV_B32, VOperand8::V0, SOperand9::S2).Get(),
+    };
+    const auto spirv = TranslateToSpirv(instructions);
+    const auto result = runner->run<u32>(spirv, std::array{data, (width << 16) | offset, 0U, 0U});
+    EXPECT_TRUE(result.has_value());
+    return result.value_or(0xdeadbeefU);
+}
+
+} // Anonymous namespace
+
+TEST_F(GcnTest, bfe_u32_field_within_dword) {
+    EXPECT_EQ(RunScalarBfe(OpcodeSOP2::S_BFE_U32, 0xab123456U, 8, 8), 0x34U);
+    EXPECT_EQ(RunScalarBfe(OpcodeSOP2::S_BFE_U32, 0xab123456U, 24, 8), 0xabU);
+}
+
+TEST_F(GcnTest, bfe_u32_field_past_bit31) {
+    EXPECT_EQ(RunScalarBfe(OpcodeSOP2::S_BFE_U32, 0xab123456U, 24, 16), 0xabU);
+    EXPECT_EQ(RunScalarBfe(OpcodeSOP2::S_BFE_U32, 0xab123456U, 28, 12), 0xaU);
+}
+
+TEST_F(GcnTest, bfe_i32_field_past_bit31) {
+    EXPECT_EQ(RunScalarBfe(OpcodeSOP2::S_BFE_I32, 0xab123456U, 24, 16), 0xffffffabU);
+    EXPECT_EQ(RunScalarBfe(OpcodeSOP2::S_BFE_I32, 0x7b123456U, 24, 16), 0x7bU);
+}
+
 TEST_F(GcnTest, addc_u32_clears_scc) {
     auto runner = gcn_test::Runner::instance().value();
     const std::array<u64, 4> instructions{
