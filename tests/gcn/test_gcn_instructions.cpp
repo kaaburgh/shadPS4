@@ -788,3 +788,67 @@ TEST_F(GcnTest, addc_u32_result_uses_scc) {
     ASSERT_TRUE(no_overflow.has_value());
     EXPECT_EQ(*no_overflow, 7U);
 }
+
+// Emulated float atomic min/max. TranslateToSpirv() uses a default Profile, which reports no
+// support for float buffer atomic min/max, so these exercise the integer-atomic fallback.
+namespace {
+
+struct BufferAtomicResult {
+    u32 returned; // pre-op value returned by the atomic (GLC=1)
+    u32 memory;   // buffer contents after the atomic
+};
+
+u64 MubufDword(Shader::Gcn::OpcodeMUBUF op, u32 vdata, u32 offset, bool glc) {
+    const u32 dw0 = (0b111000U << 26) | (std::to_underlying(op) << 18) | (u32{glc} << 14) | offset;
+    // vaddr = v0 (unused, no offen/idxen), srsrc = s[0:3], soffset = inline constant 0.
+    const u32 dw1 = (vdata << 8) | (0x80U << 24);
+    return (u64{dw1} << 32) | dw0;
+}
+
+BufferAtomicResult RunBufferAtomicF32(Shader::Gcn::OpcodeMUBUF op, float memory, float operand) {
+    using Shader::Gcn::OpcodeMUBUF;
+    auto runner = gcn_test::Runner::instance().value();
+    // v0 = initial memory value, v1 = atomic operand. The memory dword lives at byte offset 4;
+    // the harness stores v0 (the value returned by the atomic) at byte offset 0.
+    const std::array<u64, 3> instructions{
+        MubufDword(OpcodeMUBUF::BUFFER_STORE_DWORD, 0, 4, false),
+        MubufDword(op, 1, 4, true),
+        VOP1(OpcodeVOP1::V_MOV_B32, VOperand8::V0, SOperand9::V1).Get(),
+    };
+    const auto spirv = TranslateToSpirv(instructions);
+    const auto result = runner->run<BufferAtomicResult>(
+        spirv, std::array{std::bit_cast<u32>(memory), std::bit_cast<u32>(operand), 0U, 0U});
+    EXPECT_TRUE(result.has_value());
+    return result.value_or(BufferAtomicResult{});
+}
+
+constexpr std::array<std::pair<float, float>, 6> kFloatAtomicOperands{{
+    {3.0f, 5.0f},
+    {5.0f, 3.0f},
+    {-2.0f, -1.0f},
+    {-1.0f, -2.0f},
+    {3.0f, -1.0f},
+    {-1.0f, 3.0f},
+}};
+
+} // Anonymous namespace
+
+TEST_F(GcnTest, buffer_atomic_fmin_emulated) {
+    for (const auto& [memory, operand] : kFloatAtomicOperands) {
+        SCOPED_TRACE(testing::Message() << "memory=" << memory << " operand=" << operand);
+        const auto result =
+            RunBufferAtomicF32(Shader::Gcn::OpcodeMUBUF::BUFFER_ATOMIC_FMIN, memory, operand);
+        EXPECT_EQ(std::bit_cast<float>(result.memory), std::fmin(memory, operand));
+        EXPECT_EQ(std::bit_cast<float>(result.returned), memory);
+    }
+}
+
+TEST_F(GcnTest, buffer_atomic_fmax_emulated) {
+    for (const auto& [memory, operand] : kFloatAtomicOperands) {
+        SCOPED_TRACE(testing::Message() << "memory=" << memory << " operand=" << operand);
+        const auto result =
+            RunBufferAtomicF32(Shader::Gcn::OpcodeMUBUF::BUFFER_ATOMIC_FMAX, memory, operand);
+        EXPECT_EQ(std::bit_cast<float>(result.memory), std::fmax(memory, operand));
+        EXPECT_EQ(std::bit_cast<float>(result.returned), memory);
+    }
+}
