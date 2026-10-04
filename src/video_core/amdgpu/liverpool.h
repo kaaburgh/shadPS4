@@ -92,6 +92,7 @@ public:
 
     void SetVoPort(Libraries::VideoOut::VideoOutPort* port) {
         vo_port = port;
+        completion_vo_port.store(port);
     }
 
     void BindRasterizer(Vulkan::Rasterizer* rasterizer_);
@@ -205,6 +206,9 @@ private:
     std::shared_ptr<CompletionOwner> completion_owner;
     std::shared_ptr<VideoCore::Sync::GuestCompletionLane> completion_lane;
     std::atomic<bool> completion_stopping{};
+    std::once_flag completion_stop_once;
+    std::mutex process_join_mutex;
+    std::atomic<Libraries::VideoOut::VideoOutPort*> completion_vo_port{};
     std::ofstream completion_trace;
     uint64_t completion_count{}, prefix_count{}, empty_prefix_count{}, synchronous_count{};
 

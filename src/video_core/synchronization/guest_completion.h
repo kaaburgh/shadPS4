@@ -158,6 +158,7 @@ public:
             accepting = false;
             pending.clear();
             queues.clear();
+            cancelled += depth;
             depth = 0;
             active.reset();
         }
@@ -165,6 +166,10 @@ public:
         cv.notify_all();
         if (worker.joinable())
             worker.join();
+    }
+    size_t CancelledCount() const {
+        std::scoped_lock lock{mutex};
+        return cancelled;
     }
     size_t HighWater() const {
         std::scoped_lock lock{mutex};
@@ -230,7 +235,7 @@ private:
     std::deque<Ready> pending;
     std::optional<Ready> active;
     std::map<uint32_t, Order> queues;
-    size_t depth{}, high_water{};
+    size_t depth{}, high_water{}, cancelled{};
     uint64_t completed_through{};
     bool accepting{true}, failed{};
     std::jthread worker;

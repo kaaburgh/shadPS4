@@ -22,9 +22,10 @@ inline VideoCore::Sync::ScalarData ScalarSelector(DataSelect data) {
     }
 }
 inline VideoCore::Sync::ScalarCompletion OwnScalar(const PM4CmdEventWriteEop& p) {
-    ASSERT(p.int_sel == InterruptSelect::None || p.int_sel == InterruptSelect::IrqOnly ||
-           p.int_sel == InterruptSelect::IrqWhenWriteConfirm);
-    ASSERT(p.int_sel != InterruptSelect::IrqOnly || p.data_sel == DataSelect::None);
+    if (!(p.int_sel == InterruptSelect::None || p.int_sel == InterruptSelect::IrqOnly ||
+          p.int_sel == InterruptSelect::IrqWhenWriteConfirm) ||
+        (p.int_sel == InterruptSelect::IrqOnly && p.data_sel != DataSelect::None))
+        UNREACHABLE_MSG("Unsupported EOP scalar/IRQ combination");
     return {.family = VideoCore::Sync::ScalarFamily::Eop,
             .data = ScalarSelector(p.data_sel),
             .address = reinterpret_cast<VAddr>(p.Address<u32>()),
@@ -33,7 +34,8 @@ inline VideoCore::Sync::ScalarCompletion OwnScalar(const PM4CmdEventWriteEop& p)
             .interrupt = p.int_sel != InterruptSelect::None};
 }
 inline VideoCore::Sync::ScalarCompletion OwnScalar(const PM4CmdEventWriteEos& p) {
-    ASSERT(p.command == PM4CmdEventWriteEos::Command::SignalFence);
+    if (p.command != PM4CmdEventWriteEos::Command::SignalFence)
+        UNREACHABLE_MSG("Non-scalar EOS");
     return {.family = VideoCore::Sync::ScalarFamily::Eos,
             .data = VideoCore::Sync::ScalarData::Immediate32,
             .address = p.Address<VAddr>(),
@@ -41,9 +43,10 @@ inline VideoCore::Sync::ScalarCompletion OwnScalar(const PM4CmdEventWriteEos& p)
             .event_control = p.event_control};
 }
 inline VideoCore::Sync::ScalarCompletion OwnScalar(const PM4CmdReleaseMem& p) {
-    ASSERT(p.data_sel != DataSelect::None && p.data_sel != DataSelect::GdsMemStore);
-    ASSERT(p.int_sel == InterruptSelect::None || p.int_sel == InterruptSelect::IrqUndocumented ||
-           p.int_sel == InterruptSelect::IrqWhenWriteConfirm);
+    if (p.data_sel == DataSelect::None || p.data_sel == DataSelect::GdsMemStore ||
+        !(p.int_sel == InterruptSelect::None || p.int_sel == InterruptSelect::IrqUndocumented ||
+          p.int_sel == InterruptSelect::IrqWhenWriteConfirm))
+        UNREACHABLE_MSG("Unsupported ReleaseMem scalar/IRQ combination");
     return {.family = VideoCore::Sync::ScalarFamily::Release,
             .data = ScalarSelector(p.data_sel),
             .address = p.Address<VAddr>(),

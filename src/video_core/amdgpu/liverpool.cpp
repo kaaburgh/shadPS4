@@ -104,8 +104,8 @@ void Liverpool::BindRasterizer(Vulkan::Rasterizer* rasterizer_) {
                     target->DrainCompletions();
             });
             // The VO predicate may be false while the label action is CP-ready.
-            if (owner->target->vo_port)
-                owner->target->vo_port->SignalVoLabel();
+            if (auto* port = owner->target->completion_vo_port.load())
+                port->SignalVoLabel();
         });
     if (const char* path = std::getenv("SHADPS4_E1_TRACE")) {
         completion_trace.open(path, std::ios::out | std::ios::trunc);
@@ -114,30 +114,37 @@ void Liverpool::BindRasterizer(Vulkan::Rasterizer* rasterizer_) {
 }
 
 void Liverpool::StopCompletionLane() {
-    if (completion_stopping.exchange(true))
-        return;
-    if (completion_owner) {
-        std::scoped_lock lock{completion_owner->mutex};
-        completion_owner->target = nullptr; // Reject posts and invalidate CP-ready messages.
-    }
-    if (completion_lane)
-        completion_lane->Stop();
+    std::call_once(completion_stop_once, [this] {
+        completion_stopping = true;
+        if (completion_owner) {
+            std::scoped_lock lock{completion_owner->mutex};
+            completion_owner->target = nullptr;
+        }
+        if (completion_lane)
+            completion_lane->Stop();
+    });
 }
 
 void Liverpool::Stop() {
     StopCompletionLane();
     process_thread.request_stop();
     submit_cv.notify_all();
-    if (vo_port)
-        vo_port->SignalVoLabel();
-    if (process_thread.joinable() && process_thread.get_id() != std::this_thread::get_id())
+    if (auto* port = completion_vo_port.load())
+        port->SignalVoLabel();
+    if (std::this_thread::get_id() == gpu_id)
+        return;
+    std::scoped_lock join_lock{process_join_mutex};
+    if (process_thread.joinable())
         process_thread.join();
     if (completion_trace.is_open()) {
         completion_trace << "{\"summary\":true,\"published\":" << completion_count
                          << ",\"prefix_submits\":" << prefix_count
                          << ",\"known_empty_prefixes\":" << empty_prefix_count
                          << ",\"synchronous_proofs\":" << synchronous_count
-                         << ",\"depth_high_water\":" << completion_lane->HighWater() << "}\n";
+                         << ",\"depth_high_water\":" << completion_lane->HighWater()
+                         << ",\"cancelled_unpublished\":" << completion_lane->CancelledCount()
+                         << ",\"draw_scheduler_submits\":"
+                         << rasterizer->GetScheduler().SubmittedCount() << "}\n";
         completion_trace.close();
     }
 }

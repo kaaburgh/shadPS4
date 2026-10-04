@@ -292,6 +292,8 @@ Scheduler::SubmitResult Scheduler::SubmitExecution(SubmitInfo& info) {
             UmaCensus::Emit(UmaCensus::Kind::Submit, 0, commands.size(), census_context, 0,
                             signal_value, uint64_t(int64_t(status)), submit_ns,
                             instance.GetGraphicsQueueFamilyIndex());
+            if (status == vk::Result::eSuccess)
+                ++successful_submissions;
             if (census_observer && status == vk::Result::eSuccess)
                 census_observer->Submitted(signal_value);
             return static_cast<int32_t>(status);

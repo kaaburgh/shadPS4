@@ -364,6 +364,9 @@ public:
     using SubmittedTick = VideoCore::Sync::SubmittedTick;
     using SubmitResult = std::expected<SubmittedTick, vk::Result>;
     SubmitResult FlushAndGetSubmittedTickForCurrentPrefix();
+    uint64_t SubmittedCount() const {
+        return successful_submissions.load();
+    }
     VideoCore::Sync::WaitStatus WaitSubmitted(const SubmittedTick& ticket, std::stop_token stop);
     VideoCore::Sync::CompletedPrefix FinishAndGetCompletedPrefix(uint64_t caller = 0);
     const auto& TimelineIdentity() const {
@@ -519,6 +522,7 @@ private:
     uint64_t census_context{};
     std::unique_ptr<UmaTimelineObserver> census_observer;
     VideoCore::Sync::SubmittedPrefix<vk::CommandBuffer> prefix;
+    std::atomic<uint64_t> successful_submissions{};
     std::condition_variable_any event_cv;
     struct PendingOp {
         Common::UniqueFunction<void> callback;
