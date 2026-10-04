@@ -1,0 +1,78 @@
+{
+  "base": "2437a5538bbc4fdffed8cf04bdb06ba08f91e095",
+  "upstream": "f73709cada28e77523e37806fee5c454711d24ba",
+  "evidence": "static + source-helper synthetic + fake-scheduler scaffolding",
+  "runtime_tests_in_E1A": false,
+  "blobs": {
+    "src/video_core/amdgpu/liverpool.cpp": "07d64a5d53bf7b542ddb71ebf01af62a06a2ab2a",
+    "src/video_core/amdgpu/pm4_cmds.h": "f4a07025a7395262c8868f49c4aeb7d1f970ac60",
+    "src/video_core/renderer_vulkan/vk_scheduler.cpp": "8798ddc7aa81fe39b9735b50828e26a7309a7100",
+    "src/video_core/renderer_vulkan/vk_scheduler.h": "6144477c6f9eb2eea9bcfaa51b663b07374af682",
+    "src/video_core/renderer_vulkan/vk_semaphore.cpp": "5b877d5f7568810d52dff2be37c0b230fc168c92",
+    "src/video_core/renderer_vulkan/vk_rasterizer.cpp": "f9b1f118415344f7319e8eabb4b7c377c983d3c7",
+    "src/video_core/texture_cache/texture_cache.cpp": "2e5f55b9ebb1be99cd5803b86c586409818df4eb",
+    "src/core/memory.cpp": "93e77643ea82a44d011b709998374c1ff0384e1d",
+    "src/core/platform.h": "bdb50701bf28621938df4b5a7a0cd1044850f32d",
+    "src/core/libraries/videoout/driver.cpp": "8d8d988ad31d165502d7369b15eb7a0f344e97d0",
+    "src/core/libraries/videoout/driver.h": "ca2b6456dda486e612980fdc48cc16438005696d",
+    "src/core/libraries/videoout/video_out.cpp": "1cf6d2a83a365fa6ce4215cfbb3b81c6c70a1b13"
+  },
+  "e0_summaries": {
+    "uma-e0-verified-disabled": {
+      "sha256": "bb26334305ce9560ed61e8264d69b30ac0d720746b2e5665bf4b55ac876aa45d",
+      "source": "2437a5538bbc4fdffed8cf04bdb06ba08f91e095",
+      "drops": 0,
+      "signals": {
+        "signalled_before_host_submit_confirmed": 10724
+      },
+      "timeline": {
+        "successful_submits": 1772,
+        "completion_observations": 1772,
+        "submitted_ticks_unobserved_at_end": 0,
+        "submit_to_observed_completion_ms": {
+          "n": 1772,
+          "min": 0.043695,
+          "p50": 0.956981,
+          "p95": 6.470133,
+          "max": 7.703462
+        },
+        "completion_timestamps": "upper bounds on actual completion"
+      },
+      "existing_finish": {}
+    },
+    "uma-e0-verified-precise": {
+      "sha256": "91dd65b83d610de845ffc21b8b2d6c211043bc21dcc515f51003dc709e1afb42",
+      "source": "2437a5538bbc4fdffed8cf04bdb06ba08f91e095",
+      "drops": 0,
+      "signals": {
+        "signalled_before_host_submit_confirmed": 10701
+      },
+      "timeline": {
+        "successful_submits": 2275,
+        "completion_observations": 2275,
+        "submitted_ticks_unobserved_at_end": 0,
+        "submit_to_observed_completion_ms": {
+          "n": 2275,
+          "min": 0.023505,
+          "p50": 0.881254,
+          "p95": 5.468154,
+          "max": 7.220363
+        },
+        "completion_timestamps": "upper bounds on actual completion"
+      },
+      "existing_finish": {
+        "2": 504
+      }
+    }
+  },
+  "validation": {
+    "normal_tests": 21,
+    "passing": 16,
+    "intentional_expected_failures": 5,
+    "strict_current_exit": 1,
+    "strict_current_failures": 5,
+    "compiler": "clang++-19",
+    "production_build": "not needed: no production/build-system code changed",
+    "game_runs": 0
+  }
+}
