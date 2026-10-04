@@ -93,6 +93,8 @@ Working directory:
 Actual producer header: **CUSA03173, 01.09; signals; NVIDIA GeForce RTX 5070 Ti;
 Vulkan driver 595.91.7.0 (operator driver 595.91.07); runtime block size 65,536**.
 Both modes used the same selected configuration except temporary readbacks mode.
+Upstream IPC disables automatic XML patches; no PATCH_MEMORY commands were sent.
+The current patches directory was empty, so this did not remove an active XML patch.
 All launches used bounded upstream IPC STOP and exited 0 without forced kill.
 No device loss or observer wait failures were found. Raw logs contain normal
 upstream warnings; no claim of clean Vulkan validation-layer coverage is made.

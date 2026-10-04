@@ -52,7 +52,8 @@ def main():
                   'input_helper_sha256':digest(X11_CONTROL), 'binary_sha256':digest(args.binary),
                   'source_sha':subprocess.check_output(['git','-C',str(REPO),'rev-parse','HEAD'],text=True).strip(),
                   'copy_receipt_sha256':digest(receipt), 'start_unix_ns':time.time_ns(),
-                  'checkpoint':'unverified unless operator confirms', 'raw_log_private':True}
+                  'checkpoint':'unverified unless operator confirms', 'raw_log_private':True,
+                  'automatic_xml_patches':'disabled by upstream IPC; no PATCH_MEMORY commands sent'}
     provenance['parameters'] = {k:str(v) if isinstance(v,Path) else v for k,v in provenance['parameters'].items()}
     env = os.environ.copy()
     # Existing source instrumentation envs must never silently affect the new upstream launch.
@@ -68,7 +69,7 @@ def main():
                    SHADPS4_UMA_E0_HARNESS=f'run_capture.py:{digest(Path(__file__))}',
                    SHADPS4_UMA_E0_PARAMETERS=json.dumps(provenance['parameters'],sort_keys=True),
                    SHADPS4_UMA_E0_SOURCE_SHA=provenance['source_sha'],
-                   SHADPS4_UMA_E0_PATCH='existing selected patch configuration; see launch.json')
+                   SHADPS4_UMA_E0_PATCH='automatic XML patches disabled by upstream IPC; no PATCH_MEMORY commands; game update recorded separately')
     proc = None
     input_proc = None
     try:

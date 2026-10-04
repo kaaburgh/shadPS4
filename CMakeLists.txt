@@ -1474,6 +1474,6 @@ if(TARGET shadps4)
         src/video_core/renderer_vulkan/uma_timeline_observer.cpp)
     execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         OUTPUT_VARIABLE UMA_E0_SOURCE_SHA OUTPUT_STRIP_TRAILING_WHITESPACE)
-    target_compile_definitions(shadps4 PRIVATE UMA_E0_BUILD_CONFIGURATION="${CMAKE_BUILD_TYPE}"
-        UMA_E0_SOURCE_SHA="${UMA_E0_SOURCE_SHA}")
+    set_source_files_properties(src/common/uma_census.cpp PROPERTIES COMPILE_DEFINITIONS
+        "UMA_E0_BUILD_CONFIGURATION=\"${CMAKE_BUILD_TYPE}\";UMA_E0_SOURCE_SHA=\"${UMA_E0_SOURCE_SHA}\"")
 endif()

@@ -21,8 +21,12 @@ remain untouched. Raw logs/screenshots are private and must not be committed.
 On the operator's active X11 display (historically :1; use its actual DISPLAY and
 XAUTHORITY), run these two commands **sequentially**. Config override uses the
 existing historical runner's TemporaryReadbacksOverride and restores exact bytes.
-All other selected GPU settings, input configuration, patches and save/cache
-state remain the operator's existing state. Each launch records their hashes;
+All other selected GPU settings, input configuration and save/cache state remain
+the operator's existing state. Upstream IPC disables automatic XML memory patches;
+this runner sends no PATCH_MEMORY commands. This is recorded explicitly. The
+current profile has no patch XML files. If the intended scenario requires such a
+patch, these commands do not establish that scenario until its patch input is
+provided through the existing upstream IPC patch route. Each launch records their hashes;
 compare launch.json before treating runs as comparable. Persistent caches can
 warm and save state can drift; this is exploratory-unverified evidence.
 
