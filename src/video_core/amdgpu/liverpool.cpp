@@ -130,6 +130,8 @@ void Liverpool::Stop() {
                          << ",\"synchronous_proofs\":" << synchronous_count
                          << ",\"depth_high_water\":" << completion_lane->HighWater()
                          << ",\"cancelled_unpublished\":" << completion_lane->CancelledCount()
+                         << ",\"cancelled_during_publication\":" << publication_cancelled
+                         << ",\"cancelled_before_admission\":" << admission_cancelled
                          << ",\"draw_scheduler_submits\":"
                          << rasterizer->GetScheduler().SubmittedCount() << "}\n";
         completion_trace.close();
@@ -159,8 +161,10 @@ void Liverpool::QueueScalar(VideoCore::Sync::ScalarCompletion action,
     }
     if (!(action.synchronous ? completion_lane->Enqueue(*completed, action)
                              : completion_lane->Enqueue(*ticket, action))) {
-        if (completion_stopping)
+        if (completion_stopping) {
+            ++admission_cancelled;
             return;
+        }
         StopCompletionLane();
         UNREACHABLE_MSG("Guest completion admission failed");
     }
@@ -171,6 +175,15 @@ void Liverpool::DrainCompletions() {
         StopCompletionLane();
         UNREACHABLE_MSG("Host timeline failed; guest publication cancelled");
     }
+    if (draining_completions)
+        return;
+    draining_completions = true;
+    struct Reset {
+        bool& flag;
+        ~Reset() {
+            flag = false;
+        }
+    } reset{draining_completions};
     completion_lane->Drain([this](const auto& ready) { PublishScalar(ready); });
 }
 
@@ -183,8 +196,20 @@ void Liverpool::PublishScalar(const VideoCore::Sync::GuestCompletionLane::Ready&
     UmaCensus::OriginScope origin{u64(opcode), action.packet_id};
     const bool success = action.Publish(
         [&](uint64_t address, uint64_t value, uint32_t size, bool direct) {
-            const bool stored =
-                Core::Memory::Instance()->TryWriteCompletion(address, value, size, direct);
+            const auto result = Common::WriteWithCpProgress(
+                [&] {
+                    return Core::Memory::Instance()->TryWriteCompletion(address, value, size,
+                                                                        direct);
+                },
+                [&] { ProcessCommands(); },
+                [&] {
+                    std::unique_lock lock{submit_mutex};
+                    submit_cv.wait_for(lock, std::chrono::milliseconds{1}, [&] {
+                        return num_commands.load() || completion_stopping.load();
+                    });
+                },
+                [&] { return completion_stopping.load(); });
+            const bool stored = result == Common::CheckedWriteResult::Stored;
             if (stored)
                 rasterizer->Census(UmaCensus::Kind::CpuWrite, address, size, u64(opcode), 0,
                                    action.packet_id);

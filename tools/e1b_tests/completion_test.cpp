@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
+#include "common/checked_write.h"
 #include "video_core/amdgpu/scalar_completion.h"
 #include "video_core/synchronization/cp_completion_target.h"
 #include <atomic>
@@ -329,6 +330,57 @@ int main() {
     assert(lane.Failed());
     lane.Drain([](auto &) { assert(false); });
     assert(!lane.Enqueue(t, {}));
+  }
+  { // VMM holds mapping lock while waiting for a CP readback message.
+    std::mutex mapping_mutex, mailbox_mutex;
+    std::deque<std::function<void()>> mailbox;
+    std::atomic<bool> held{}, serviced{};
+    std::jthread vmm([&] {
+      std::unique_lock lock{mapping_mutex};
+      {
+        std::scoped_lock queue_lock{mailbox_mutex};
+        mailbox.emplace_back([&] { serviced = true; });
+      }
+      held = true;
+      while (!serviced)
+        std::this_thread::sleep_for(1ms);
+    });
+    while (!held)
+      std::this_thread::sleep_for(1ms);
+    int stores = 0;
+    const auto deadline = std::chrono::steady_clock::now() + 2s;
+    auto result = Common::WriteWithCpProgress(
+        [&] {
+          std::unique_lock lock{mapping_mutex, std::try_to_lock};
+          if (!lock.owns_lock())
+            return Common::CheckedWriteResult::Busy;
+          ++stores;
+          return Common::CheckedWriteResult::Stored;
+        },
+        [&] {
+          std::function<void()> command;
+          {
+            std::scoped_lock lock{mailbox_mutex};
+            if (!mailbox.empty()) {
+              command = std::move(mailbox.front());
+              mailbox.pop_front();
+            }
+          }
+          if (command)
+            command();
+        },
+        [] { std::this_thread::sleep_for(1ms); },
+        [&] { return std::chrono::steady_clock::now() > deadline; });
+    assert(result == Common::CheckedWriteResult::Stored && serviced &&
+           stores == 1);
+    vmm.join();
+    result = Common::WriteWithCpProgress(
+        [] {
+          assert(false);
+          return Common::CheckedWriteResult::Stored;
+        },
+        [] {}, [] {}, [] { return true; });
+    assert(result == Common::CheckedWriteResult::Cancelled);
   }
   std::cout << "production completion adapters: PASS\n";
 }

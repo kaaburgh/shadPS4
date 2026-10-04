@@ -7,6 +7,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include "common/checked_write.h"
 #include "common/enum.h"
 #include "common/shared_first_mutex.h"
 #include "common/singleton.h"
@@ -257,7 +258,7 @@ public:
     bool TryWriteBacking(void* address, const void* data, u64 size);
     // Checked CP scalar publication. Direct VA mode retains CPU tracking/fault behavior;
     // backing mode retains the existing EOP/EOS physical-backing write behavior.
-    bool TryWriteCompletion(VAddr address, u64 value, u32 size, bool direct);
+    Common::CheckedWriteResult TryWriteCompletion(VAddr address, u64 value, u32 size, bool direct);
 
     void SetupMemoryRegions(u64 flexible_size, bool use_extended_mem1, bool use_extended_mem2);
 

@@ -209,6 +209,8 @@ private:
     std::atomic<Libraries::VideoOut::VideoOutPort*> completion_vo_port{};
     std::ofstream completion_trace;
     uint64_t completion_count{}, prefix_count{}, empty_prefix_count{}, synchronous_count{};
+    uint64_t publication_cancelled{}, admission_cancelled{};
+    bool draining_completions{};
 
     void Process(std::stop_token stoken);
 
