@@ -85,3 +85,27 @@ full captures must confirm Central Yharnam/death/reload via operator or screensh
 
 Scope corresponds to a fresh BB-INS2 runtime producer experiment; it does not
 promote earlier baseline-bound schemas or historical Bloodborne evidence.
+
+## Verified hook corrections (2026-10-04)
+
+Command sequence is separate from sessions and ticks: ObtainBuffer and upload
+observations inherit an outer draw/dispatch/copy command ID. The actual Vulkan
+recording hook latches the scheduler instance, session and CurrentTick then, and
+session membership is joined to real NextTick submits. Runtime upload/copy
+commands also record their actual recording session. Presenter submits on the
+same draw scheduler; it must remain in that context's timeline. Sparse arena bind
+submissions record memory_semaphore signal and the owning graphics submit tick.
+
+Every existing Scheduler::Finish records begin/end and a caller tag. In particular,
+OnFence image-download Finish can precede SignalFence, and EOS GdsStore has an
+existing Finish. Fence summaries separate those cases from labels/IRQs issued
+before observed completion; missing completion is not proof of pending execution.
+
+TryWriteBacking writes backing PA directly without a protection fault or cache
+notification and affects all aliases. Emit each physical write piece immediately
+before memcpy, with originating guest VA and normal-context origin tag. Join
+physical pieces to live GPU-touched mappings and buffer-mirror holds, reporting
+possible existing mirror staleness separately from host-timeline overlap.
+
+The binary record gains a thirteenth u64, cmd_seq (104 bytes). No unsafe-context
+producer accesses mutable scheduler/session or watcher containers.
