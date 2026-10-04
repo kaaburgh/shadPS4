@@ -5,6 +5,7 @@
 #include "common/debug.h"
 #include "common/thread.h"
 #include "imgui/renderer/texture_manager.h"
+#include "video_core/renderer_vulkan/uma_timeline_observer.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 
@@ -17,12 +18,18 @@ Scheduler::Scheduler(const Instance& instance)
 #if TRACY_GPU_ENABLED
     profiler_scope = reinterpret_cast<tracy::VkCtxScope*>(std::malloc(sizeof(tracy::VkCtxScope)));
 #endif
+    if (UmaCensus::Enabled()) {
+        census_context = UmaCensus::NewId();
+        census_observer = std::make_unique<UmaTimelineObserver>(
+            instance.GetDevice(), work_semaphore.Handle(), census_context);
+    }
     BeginSession();
     priority_pending_ops_thread =
         std::jthread(std::bind_front(&Scheduler::PriorityPendingOpsThread, this));
 }
 
 Scheduler::~Scheduler() {
+    census_observer.reset();
 #if TRACY_GPU_ENABLED
     std::free(profiler_scope);
 #endif
@@ -114,12 +121,14 @@ void Scheduler::Flush() {
     Flush(info);
 }
 
-void Scheduler::Finish() {
+void Scheduler::Finish(uint64_t caller) {
+    Census(UmaCensus::Kind::Finish, 0, 0, caller, 0);
     // When finishing, we need to wait for the submission to have executed on the device.
     const u64 presubmit_tick = CurrentTick();
     SubmitInfo info{};
     SubmitExecution(info);
     Wait(presubmit_tick);
+    Census(UmaCensus::Kind::Finish, 0, 0, caller, 1, presubmit_tick);
 }
 
 void Scheduler::Wait(u64 tick) {
@@ -144,6 +153,10 @@ void Scheduler::BeginSession() {
     EndSession();
 
     auto& session = sessions.emplace_back();
+    if (UmaCensus::Enabled()) {
+        session.census_id = UmaCensus::NewId();
+        Census(UmaCensus::Kind::Session);
+    }
 
     const vk::CommandBufferBeginInfo begin_info = {
         .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit,
@@ -185,6 +198,8 @@ void Scheduler::EndSession() {
 void Scheduler::SubmitExecution(SubmitInfo& info) {
     std::scoped_lock lk{submit_mutex};
     const u64 signal_value = work_semaphore.NextTick();
+    if (UmaCensus::Enabled())
+        census_submit_tick = signal_value;
 
 #if TRACY_GPU_ENABLED
     auto* profiler_ctx = instance.GetProfilerContext();
@@ -204,6 +219,8 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     cmd_buffers.reserve(sessions.size() * 2);
 
     for (const auto& session : sessions) {
+        UmaCensus::Emit(UmaCensus::Kind::SubmitSession, 0, 0, census_context, session.census_id,
+                        signal_value, bool(session.upload));
         if (session.upload) {
             cmd_buffers.push_back(session.upload);
         }
@@ -237,7 +254,13 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
     };
 
     ImGui::Core::TextureManager::Submit();
+    const auto census_submit_ns = UmaCensus::Enabled() ? UmaCensus::Now() : 0;
     auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+    UmaCensus::Emit(UmaCensus::Kind::Submit, 0, cmd_buffers.size(), census_context, 0, signal_value,
+                    uint64_t(int64_t(submit_result)), census_submit_ns,
+                    instance.GetGraphicsQueueFamilyIndex());
+    if (census_observer && submit_result == vk::Result::eSuccess)
+        census_observer->Submitted(signal_value);
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
 
     work_semaphore.Refresh();

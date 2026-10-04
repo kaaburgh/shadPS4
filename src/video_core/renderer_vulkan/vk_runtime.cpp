@@ -121,6 +121,7 @@ void Runtime::CopyBuffer(const VideoCore::Buffer* src, const VideoCore::Buffer* 
     }
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    scheduler.Census(UmaCensus::Kind::Command, 0, 0, 10);
     cmdbuf.copyBuffer(src->Handle(), dst->Handle(), copies);
 
     for (const auto& copy : copies) {
@@ -139,6 +140,7 @@ void Runtime::FillBuffer(const VideoCore::Buffer* dst, u64 offset, u64 size, u32
     }
 
     const auto cmdbuf = scheduler.CommandBuffer();
+    scheduler.Census(UmaCensus::Kind::Command, 0, size, 11);
     cmdbuf.fillBuffer(dst->Handle(), offset, size, value);
 
     AccessBuffer(dst, offset, size, vk::PipelineStageFlagBits2::eClear,

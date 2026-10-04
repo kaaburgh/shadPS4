@@ -180,6 +180,7 @@ void Rasterizer::EliminateFastClear() {
 }
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
+    Scheduler::CensusCommandScope census_command{scheduler, 1};
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
@@ -220,6 +221,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
 
+    scheduler.Census(UmaCensus::Kind::Command, 0, 0, 1);
     if (is_indexed) {
         cmdbuf.drawIndexed(regs.num_indices, regs.num_instances.NumInstances(), 0,
                            s32(vertex_offset), instance_offset);
@@ -235,6 +237,7 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
 void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u32 stride,
                               u32 max_count, VAddr count_address, u16 vertex_sgpr_offset,
                               u16 instance_sgpr_offset) {
+    Scheduler::CensusCommandScope census_command{scheduler, 2};
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
@@ -285,6 +288,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
 
+    scheduler.Census(UmaCensus::Kind::Command, arg_address + offset, stride * max_count, 2);
     if (is_indexed) {
         ASSERT(sizeof(VkDrawIndexedIndirectCommand) == stride);
 
@@ -311,6 +315,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 }
 
 void Rasterizer::DispatchDirect() {
+    Scheduler::CensusCommandScope census_command{scheduler, 3};
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
@@ -339,6 +344,7 @@ void Rasterizer::DispatchDirect() {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+    scheduler.Census(UmaCensus::Kind::Command, 0, 0, 3);
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     DebugState.IncDispatch();
 
@@ -346,6 +352,7 @@ void Rasterizer::DispatchDirect() {
 }
 
 void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
+    Scheduler::CensusCommandScope census_command{scheduler, 4};
     RENDERER_TRACE;
 
     scheduler.PopPendingOperations();
@@ -372,6 +379,7 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+    scheduler.Census(UmaCensus::Kind::Command, 0, 0, 3);
     cmdbuf.dispatchIndirect(buffer->Handle(), base);
     DebugState.IncDispatch();
 
@@ -385,8 +393,8 @@ u64 Rasterizer::Flush() {
     return current_tick;
 }
 
-void Rasterizer::Finish() {
-    scheduler.Finish();
+void Rasterizer::Finish(uint64_t caller) {
+    scheduler.Finish(caller);
 }
 
 void Rasterizer::OnSubmit() {
@@ -424,6 +432,9 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
                           stage->samplers.size());
         BindBuffers(*stage, binding, push_data);
         BindTextures(*stage, binding);
+        if (stage->uses_dma)
+            scheduler.Census(UmaCensus::Kind::DmaSet, 0, 1, stage->pgm_hash, u64(stage->sw_stage),
+                             1);
         uses_dma |= stage->uses_dma;
     }
 
@@ -1153,12 +1164,14 @@ void Rasterizer::DepthStencilCopy(bool is_depth, bool is_stencil) {
 }
 
 void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds) {
+    Scheduler::CensusCommandScope census_command{scheduler, 5};
     ASSERT_MSG(address % 4 == 0 && num_bytes % 4 == 0,
                "FillBuffer address and size must be a multiple of 4 bytes");
     if (!is_gds) {
         texture_cache.ClearMeta(address);
         if (!buffer_cache.IsRegionGpuModified(address, num_bytes)) {
             u32* buffer = std::bit_cast<u32*>(address);
+            scheduler.Census(UmaCensus::Kind::CpuWrite, address, num_bytes, 5);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);
             return;
         }
@@ -1173,10 +1186,12 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
 }
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
+    Scheduler::CensusCommandScope census_command{scheduler, 6};
     if (!dst_gds && !buffer_cache.IsRegionGpuModified(dst, num_bytes)) {
         if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
             !texture_cache.FindImageFromRange(src, num_bytes)) {
             // Both buffers were not transferred to GPU yet. Can safely copy in host memory.
+            scheduler.Census(UmaCensus::Kind::CpuWrite, dst, num_bytes, 6, src);
             std::memcpy(std::bit_cast<void*>(dst), std::bit_cast<void*>(src), num_bytes);
             return;
         }
@@ -1245,6 +1260,7 @@ bool Rasterizer::IsMapped(VAddr addr, u64 size) {
 }
 
 void Rasterizer::MapMemory(VAddr addr, u64 size) {
+    UmaCensus::Emit(UmaCensus::Kind::GpuMap, addr, size);
     {
         std::scoped_lock lock{mapped_ranges_mutex};
         mapped_ranges += decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
@@ -1256,6 +1272,7 @@ void Rasterizer::RegisterMemory(VAddr addr, u64 size) {
 }
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
+    UmaCensus::Emit(UmaCensus::Kind::GpuUnmap, addr, size);
     buffer_cache.InvalidateMemory(addr, size);
     texture_cache.UnmapMemory(addr, size);
     {

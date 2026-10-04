@@ -105,7 +105,9 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
     };
     runtime.DownloadImage(&image, download.buffer, std::span{&image_download, 1});
     if (sync) {
-        scheduler.Finish();
+        scheduler.Census(UmaCensus::Kind::Readback, image.info.guest_address, download_size, 3);
+        scheduler.Finish(3);
+        UmaCensus::OriginScope census_origin{3};
         download.Invalidate();
         Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(image.info.guest_address),
                                                   download.mapped, download_size);

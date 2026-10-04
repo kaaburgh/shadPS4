@@ -28,6 +28,7 @@
 #include "common/polyfill_thread.h"
 #include "common/scm_rev.h"
 #include "common/singleton.h"
+#include "common/uma_census.h"
 #include "core/cpu_patches.h" // Windows static guest red-zone protection
 #include "core/debugger.h"
 #include "core/devtools/widget/module_list.h"
@@ -446,6 +447,8 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
     game_info.game_serial = id;
     game_info.title = title;
     game_info.app_ver = app_version;
+    UmaCensus::Metadata("game_id", id);
+    UmaCensus::Metadata("game_version", app_version);
     game_info.firmware_ver = fw_version & 0xFFF00000;
     game_info.raw_firmware_ver = fw_version;
     game_info.sdk_ver = ReadCompiledSdkVersion(guest_eboot_path);

@@ -109,3 +109,11 @@ possible existing mirror staleness separately from host-timeline overlap.
 
 The binary record gains a thirteenth u64, cmd_seq (104 bytes). No unsafe-context
 producer accesses mutable scheduler/session or watcher containers.
+
+## Source inspection refinement
+
+On this base, IsValidGpuMapping tests the 40-bit address bound, independent of
+MemoryProt::GpuRead/GpuWrite. Census candidates therefore include mapped memory
+below that bound and explicit renderer map/unmap requests. PoolDecommit,
+NameVirtualRange and SetDirectMemoryType metadata are observed as well. Actual
+post-merge VMA samples are reported separately from inferred candidate regions.

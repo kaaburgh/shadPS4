@@ -71,6 +71,14 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     ASSERT_MSG(std::popcount(block_size) == 1, "Sparse block size {} is not a power of 2",
                block_size);
     block_shift = std::bit_width(block_size) - 1;
+    scheduler.Census(UmaCensus::Kind::BlockSize, 0, block_size);
+    if (UmaCensus::Enabled()) {
+        UmaCensus::Metadata("readbacks_mode", std::to_string(EmulatorSettings.GetReadbacksMode()));
+        UmaCensus::Metadata("userfaultfd_requested",
+                            EmulatorSettings.IsUserfaultfdTracking() ? "true" : "false");
+        UmaCensus::Metadata("directMemoryAccess",
+                            EmulatorSettings.IsDirectMemoryAccessEnabled() ? "true" : "false");
+    }
     blocks_per_arena_page = ARENA_PAGE_SIZE / block_size;
     blocks_per_arena_page_shift = ARENA_PAGE_BITS - block_shift;
     arena_memory_type_index =
@@ -96,6 +104,7 @@ void BufferCache::TickFrame() {
 }
 
 void BufferCache::InvalidateMemory(VAddr device_addr, u64 size, bool assume_locks) {
+    UmaCensus::Emit(UmaCensus::Kind::Tracker, device_addr, size, 0, 0, 0, 1);
     memory_tracker->InvalidateRegion(device_addr, size, [this, device_addr, size, assume_locks] {
         ReadMemory(device_addr, size, true, assume_locks);
     });
@@ -156,7 +165,9 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
         copy.dstOffset += download.offset;
     }
     runtime.CopyBuffer(arena, download.buffer, copies);
-    scheduler.Finish();
+    scheduler.Census(UmaCensus::Kind::Readback, device_addr, size, 2, total_size_bytes);
+    scheduler.Finish(2);
+    UmaCensus::OriginScope census_origin{2};
 
     download.buffer->Invalidate(download.offset, download.size);
     for (const auto& copy : copies) {
@@ -174,6 +185,8 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
         memory->CopySparseMemory(device_addr, data, size);
         stream_buffer.Commit();
+        scheduler.Census(UmaCensus::Kind::Buffer, device_addr, size, 1, is_texel_buffer, 1);
+        scheduler.Census(UmaCensus::Kind::Snapshot, device_addr, size, 1);
         return {&stream_buffer, offset};
     }
     const u64 first_block = device_addr >> block_shift;
@@ -187,6 +200,8 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     if (is_written) {
         gpu_modified_ranges.Add(device_addr, size);
     }
+    scheduler.Census(UmaCensus::Kind::Buffer, device_addr, size, is_written ? 3 : 1,
+                     is_texel_buffer, 0);
     return {arena, arena->Offset(device_addr)};
 }
 
@@ -198,6 +213,8 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
                                               instance.StorageMinAlignment());
     memory->CopySparseMemory(device_addr, staging.mapped, staging.size);
     staging.Flush();
+    scheduler.Census(UmaCensus::Kind::Buffer, device_addr, size, 1, 1, 2);
+    scheduler.Census(UmaCensus::Kind::Snapshot, device_addr, size, 2);
     return {staging.buffer, staging.offset};
 }
 
@@ -210,11 +227,13 @@ bool BufferCache::IsRegionGpuModified(VAddr addr, size_t size) {
 }
 
 void BufferCache::SynchronizeDmaBuffers() {
+    scheduler.Census(UmaCensus::Kind::DmaSet, 0, 0, 3);
     fault_process_pending = true;
     for (const auto& range : resident_ranges) {
         const u64 page = range.start >> (ARENA_PAGE_BITS - block_shift);
         const VAddr device_addr = range.start << block_shift;
         const u64 size = (range.end - range.start) << block_shift;
+        scheduler.Census(UmaCensus::Kind::DmaRange, device_addr, size, 3);
         SynchronizeMemory(address_space[page], device_addr, size, false, false);
     }
 }
@@ -305,6 +324,8 @@ void BufferCache::EnsureResident(const Buffer* arena, u64 first_block, u64 last_
         backing.end = range.end;
         backing.memory = device_memory;
         backing.offset = memory_offset >> block_shift;
+        scheduler.Census(UmaCensus::Kind::Resident, backing.start << block_shift,
+                         (backing.end - backing.start) << block_shift, 1);
         resident_ranges.Add(backing);
 
         LOG_INFO(Render, "Making range start={}, end={} resident", backing.start, backing.end);
@@ -340,6 +361,7 @@ bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 
     if (!copies.empty()) {
         const auto staging = staging_pool.Request(total_size_bytes, MemoryType::HostUncached);
         for (auto& copy : copies) {
+            scheduler.Census(UmaCensus::Kind::Snapshot, copy.dstOffset, copy.size, 3);
             memory->CopySparseMemory(copy.dstOffset, staging.mapped + copy.srcOffset, copy.size);
             copy.srcOffset += staging.offset;
             copy.dstOffset -= arena->cpu_addr;
@@ -437,6 +459,8 @@ void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
 
     info.AddWait(signal_sema, signal_tick);
     auto submit_result = instance.GetGraphicsQueue().bindSparse(sparse_info);
+    scheduler.Census(UmaCensus::Kind::ArenaBind, 0, pending_binds.size(), signal_tick,
+                     uint64_t(int64_t(submit_result)), scheduler.CensusSubmittingTick());
     ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
 
     pending_binds.clear();

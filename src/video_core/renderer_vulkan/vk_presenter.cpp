@@ -504,9 +504,9 @@ Presenter::~Presenter() {
     ImGui::Friends::Unregister();
     ImGui::Layer::RemoveLayer(Common::Singleton<Core::Devtools::Layer>::Instance());
 
-    draw_scheduler.Finish();
-    present_scheduler.Finish();
-    flip_scheduler.Finish();
+    draw_scheduler.Finish(4);
+    present_scheduler.Finish(5);
+    flip_scheduler.Finish(6);
     Check(draw_scheduler.CommandBuffer().reset());
     Check(present_scheduler.CommandBuffer().reset());
     Check(flip_scheduler.CommandBuffer().reset());

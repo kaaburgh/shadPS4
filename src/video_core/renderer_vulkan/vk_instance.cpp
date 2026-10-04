@@ -8,6 +8,7 @@
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/types.h"
+#include "common/uma_census.h"
 #include "imgui/renderer/imgui_core.h"
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -164,6 +165,13 @@ Instance::Instance(Frontend::WindowSDL& window, s32 physical_device_index,
     available_extensions = GetSupportedExtensions(physical_device);
     format_properties = GetFormatProperties(physical_device);
     properties = physical_device.getProperties();
+    if (UmaCensus::Enabled()) {
+        UmaCensus::Metadata("gpu", std::string(properties.deviceName.data()));
+        UmaCensus::Metadata("vulkan_driver_version", std::to_string(properties.driverVersion));
+        UmaCensus::Metadata("vulkan_api_version", std::to_string(properties.apiVersion));
+        UmaCensus::Metadata("renderer_device_id", std::to_string(properties.deviceID));
+        UmaCensus::Metadata("renderer_vendor_id", std::to_string(properties.vendorID));
+    }
     memory_properties = physical_device.getMemoryProperties();
     CollectDeviceParameters();
     ASSERT_MSG(properties.apiVersion >= TargetVulkanApiVersion,
@@ -172,6 +180,8 @@ Instance::Instance(Frontend::WindowSDL& window, s32 physical_device_index,
                VK_VERSION_MAJOR(properties.apiVersion), VK_VERSION_MINOR(properties.apiVersion));
 
     CreateDevice();
+    if (UmaCensus::Enabled())
+        UmaCensus::Metadata("vulkan_driver", GetDriverVersionName());
     CollectPhysicalMemoryInfo();
     CollectImageFormatInfo();
     CollectToolingInfo();

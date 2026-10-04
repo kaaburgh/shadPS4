@@ -17,6 +17,7 @@
 #include "common/logging/log.h"
 #include "common/memory_patcher.h"
 #include "common/path_util.h"
+#include "common/uma_census.h"
 #include "core/debugger.h"
 #include "core/emulator_settings.h"
 #include "core/emulator_state.h"
@@ -33,6 +34,10 @@
 #endif
 
 int main(int argc, char* argv[]) {
+    if (argc == 2 && std::string_view(argv[1]) == "--uma-e0-self-test")
+        return UmaCensus::SelfTest();
+    if (!UmaCensus::Initialize())
+        return 1;
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
 #endif

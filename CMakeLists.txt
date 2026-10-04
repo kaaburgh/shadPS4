@@ -1467,3 +1467,13 @@ else()
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# Opt-in Linux research census; hot paths do not serialize or allocate.
+if(TARGET shadps4)
+    target_sources(shadps4 PRIVATE src/common/uma_census.cpp src/common/uma_census.h
+        src/video_core/renderer_vulkan/uma_timeline_observer.cpp)
+    execute_process(COMMAND git rev-parse HEAD WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        OUTPUT_VARIABLE UMA_E0_SOURCE_SHA OUTPUT_STRIP_TRAILING_WHITESPACE)
+    target_compile_definitions(shadps4 PRIVATE UMA_E0_BUILD_CONFIGURATION="${CMAKE_BUILD_TYPE}"
+        UMA_E0_SOURCE_SHA="${UMA_E0_SOURCE_SHA}")
+endif()

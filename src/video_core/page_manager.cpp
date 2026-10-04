@@ -11,6 +11,7 @@
 #include "common/multi_level_page_table.h"
 #include "common/signal_context.h"
 #include "common/thread.h"
+#include "common/uma_census.h"
 #include "core/emulator_settings.h"
 #include "core/memory.h"
 #include "core/signals.h"
@@ -157,6 +158,9 @@ struct PageManager::Impl {
 
             // Apply the change to the page state
             const auto new_perms = state->Update(write_op);
+            UmaCensus::Emit(UmaCensus::Kind::Watch, page << PM_PAGE_BITS, PM_PAGE_SIZE, 0, 0, 0,
+                            state->num_write_watchers, state->num_read_watchers,
+                            u64(std::to_underlying(write_op)), 1);
             if (new_perms != perms) [[unlikely]] {
                 // If the protection changed add pending (un)protect action
                 release_pending();
@@ -224,6 +228,14 @@ struct PageManager::Impl {
             const bool update_write = write_op != PageOp::None && write_mask.GetPage(page);
             const bool update_read = read_op != PageOp::None && read_mask.GetPage(page);
             const auto new_perms = state->Update(write_op, update_write, read_op, update_read);
+            if (update_write || update_read)
+                UmaCensus::Emit(UmaCensus::Kind::Watch, (base_page + page) << PM_PAGE_BITS,
+                                PM_PAGE_SIZE, 0, 0, 0, state->num_write_watchers,
+                                state->num_read_watchers,
+                                u64(update_write) | (u64(update_read) << 1) |
+                                    ((u64(std::to_underlying(write_op)) & 255) << 8) |
+                                    ((u64(std::to_underlying(read_op)) & 255) << 16),
+                                2);
 
             if (new_perms != perms) [[unlikely]] {
                 // If the protection changed add pending (un)protect action
@@ -307,6 +319,7 @@ public:
             throw std::runtime_error("uffdio_api");
         }
 
+        UmaCensus::Metadata("tracking_actual", "userfaultfd");
         // Create uffd handler thread
         ufd_thread = std::jthread([&](std::stop_token token) { UffdHandler(token); });
     }
@@ -396,6 +409,7 @@ public:
             // Notify rasterizer about the fault.
             const VAddr addr = msg.arg.pagefault.address;
             const auto ptid = msg.arg.pagefault.feat.ptid;
+            UmaCensus::Emit(UmaCensus::Kind::Fault, addr, 1, 0, 0, 0, 1, 1);
             rasterizer->InvalidateMemory(addr, 1,
                                          ptid == rasterizer->GetGpuCommandProcessorThreadId());
 
@@ -414,6 +428,7 @@ public:
 
 struct SignalImpl : public PageManager::Impl {
     SignalImpl(Vulkan::Rasterizer* rasterizer_) : Impl() {
+        UmaCensus::Metadata("tracking_actual", "signals");
         rasterizer = rasterizer_;
 
         // Should be called first.
@@ -434,6 +449,8 @@ struct SignalImpl : public PageManager::Impl {
     static bool GuestFaultSignalHandler(void* context, void* fault_address) {
         const auto addr = reinterpret_cast<VAddr>(fault_address);
         const auto size = std::min<u64>(8, PageManager::GetNextPageAddr(addr) - addr);
+        UmaCensus::Emit(UmaCensus::Kind::Fault, addr, size, 0, 0, 0,
+                        Common::IsWriteError(context) ? 1 : 0);
         const auto is_gpu_thread =
             std::this_thread::get_id() == rasterizer->GetGpuCommandProcessorThread();
         if (Common::IsWriteError(context)) {

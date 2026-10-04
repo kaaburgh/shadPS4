@@ -5,6 +5,7 @@
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/elf_info.h"
+#include "common/uma_census.h"
 #include "core/emulator_settings.h"
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/memory.h"
@@ -14,6 +15,30 @@
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
 namespace Core {
+namespace {
+void CensusMap(const VirtualMemoryArea& vma, VAddr addr, u64 size, u64 flags = 0) {
+    if (!UmaCensus::Enabled() || !vma.IsMapped())
+        return;
+    const auto epoch = UmaCensus::NewId();
+    UmaCensus::Emit(UmaCensus::Kind::Map, addr, size, epoch, 0, 0, u64(vma.prot),
+                    flags | (u64(vma.disallow_merge) << 32), std::hash<std::string>{}(vma.name),
+                    u32(vma.type));
+    for (const auto& [offset, piece] : vma.phys_areas) {
+        const auto begin = std::max(addr, vma.base + offset);
+        const auto end = std::min(addr + size, vma.base + offset + piece.size);
+        if (begin >= end)
+            continue;
+        UmaCensus::Emit(UmaCensus::Kind::Piece, begin, end - begin, epoch, 0, 0,
+                        piece.base + begin - vma.base - offset, uint64_t(piece.memory_type),
+                        uint64_t(piece.dma_type), u32(vma.type));
+    }
+}
+void CensusVma(const VirtualMemoryArea& vma) {
+    if (vma.IsMapped())
+        UmaCensus::Emit(UmaCensus::Kind::Vma, vma.base, vma.size, 0, 0, 0, u64(vma.prot),
+                        vma.phys_areas.size(), vma.disallow_merge, u32(vma.type));
+}
+} // namespace
 
 MemoryManager::MemoryManager() {
     LOG_INFO(Kernel_Vmm, "Virtual memory space initialized with regions:");
@@ -192,6 +217,10 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
                 std::max<u64>(start_in_vma, phys_handle->first) - phys_handle->first;
             u8* backing = impl.BackingBase() + phys_handle->second.base + start_in_dma;
             u64 copy_size = std::min<u64>(size, phys_handle->second.size - start_in_dma);
+            UmaCensus::Emit(UmaCensus::Kind::BackingWrite,
+                            vma.base + phys_handle->first + start_in_dma, copy_size, 0, 0, 0,
+                            phys_handle->second.base + start_in_dma, UmaCensus::origin_tag,
+                            UmaCensus::origin_packet, u32(vma.type));
             memcpy(backing, data, copy_size);
             size -= copy_size;
         }
@@ -458,8 +487,10 @@ s32 MemoryManager::PoolCommit(VAddr virtual_addr, u64 size, MemoryProt prot, s32
     }
     ASSERT_MSG(remaining_size == 0, "Failed to commit pooled memory");
 
+    CensusMap(new_vma, mapped_addr, size);
     // Merge this VMA with similar nearby areas
     MergeAdjacent(vma_map, new_vma_handle);
+    CensusVma(FindVMA(mapped_addr)->second);
 
     lk2.unlock();
     if (IsValidGpuMapping(mapped_addr, size)) {
@@ -475,6 +506,7 @@ MemoryManager::VMAHandle MemoryManager::CreateArea(VAddr virtual_addr, u64 size,
     // Locate the VMA representing the requested region
     auto vma = FindVMA(virtual_addr)->second;
     if (True(flags & MemoryMapFlags::Fixed)) {
+        UmaCensus::OriginScope census_origin{100};
         // If fixed is specified, map directly to the region of virtual_addr + size.
         // Callers should check to ensure the NoOverwrite flag is handled appropriately beforehand.
         auto unmap_addr = virtual_addr;
@@ -668,12 +700,14 @@ s32 MemoryManager::MapMemory(void** out_addr, VAddr virtual_addr, u64 size, Memo
         ASSERT_MSG(remaining_size == 0, "Failed to map physical memory");
     }
 
+    CensusMap(new_vma, mapped_addr, size, u64(flags));
     if (new_vma.type != VMAType::Direct || sdk_version >= Common::ElfInfo::FW_200) {
         // Merge this VMA with similar nearby areas
         // Direct memory mappings only coalesce on SDK version 2.00 or later.
         MergeAdjacent(vma_map, new_vma_handle);
     }
 
+    CensusVma(FindVMA(mapped_addr)->second);
     *out_addr = std::bit_cast<void*>(mapped_addr);
     if (type != VMAType::Reserved && type != VMAType::PoolReserved) {
         // Flexible address space mappings were performed while finding direct memory areas.
@@ -852,6 +886,8 @@ s32 MemoryManager::PoolDecommit(VAddr virtual_addr, u64 size) {
         const auto& vma_base = handle->second;
         const auto start_in_vma = current_addr - vma_base.base;
         const auto size_in_vma = std::min<u64>(remaining_size, vma_base.size - start_in_vma);
+        UmaCensus::Emit(UmaCensus::Kind::Unmap, current_addr, size_in_vma, 0, 0, 0,
+                        u64(vma_base.type), u64(vma_base.prot), 101);
         if (vma_base.type == VMAType::Pooled) {
             // Track how much pooled memory is decommitted
             pool_budget += size_in_vma;
@@ -896,6 +932,7 @@ s32 MemoryManager::PoolDecommit(VAddr virtual_addr, u64 size) {
         remaining_size -= size_in_vma;
     }
 
+    UmaCensus::Emit(UmaCensus::Kind::UnmapCall, virtual_addr, size, 0, 0, 0, 2);
     // Unmap from address space
     u64 size_to_unmap = size;
     VAddr unmapped_addr = impl.Unmap(virtual_addr, &size_to_unmap);
@@ -929,7 +966,9 @@ s32 MemoryManager::UnmapMemory(VAddr virtual_addr, u64 size) {
 
     // Acquire writer lock.
     std::scoped_lock lk2{mutex};
-    return UnmapMemoryImpl(virtual_addr, size);
+    const auto result = UnmapMemoryImpl(virtual_addr, size);
+    UmaCensus::Emit(UmaCensus::Kind::UnmapCall, virtual_addr, size, 0, 0, 0, 1);
+    return result;
 }
 
 u64 MemoryManager::UnmapBytesFromEntry(VAddr virtual_addr, VirtualMemoryArea vma_base, u64 size) {
@@ -940,6 +979,8 @@ u64 MemoryManager::UnmapBytesFromEntry(VAddr virtual_addr, VirtualMemoryArea vma
         return size_in_vma;
     }
 
+    UmaCensus::Emit(UmaCensus::Kind::Unmap, virtual_addr, size_in_vma, 0, 0, 0, u64(vma_base.type),
+                    u64(vma_base.prot), UmaCensus::origin_tag);
     VAddr current_addr = virtual_addr;
     if (vma_base.phys_areas.size() > 0) {
         u64 size_to_free = size_in_vma;
@@ -1096,7 +1137,10 @@ s64 MemoryManager::ProtectBytes(VAddr addr, VirtualMemoryArea& vma_base, u64 siz
     const auto new_it = CarveVMA(addr, adjusted_size);
     auto& new_vma = new_it->second;
     new_vma.prot = prot;
+    UmaCensus::Emit(UmaCensus::Kind::Protect, addr, adjusted_size, 0, 0, 0, u64(prot),
+                    u64(old_prot));
     MergeAdjacent(vma_map, new_it);
+    CensusVma(FindVMA(addr)->second);
 
     if (vma_base.type == VMAType::Reserved) {
         // On PS4, protections change vma_map, but don't apply.
@@ -1301,6 +1345,9 @@ s32 MemoryManager::SetDirectMemoryType(VAddr addr, u64 size, s32 memory_type) {
             while (phys_handle != vma_handle->second.phys_areas.end()) {
                 // Update internal physical areas
                 phys_handle->second.memory_type = memory_type;
+                UmaCensus::Emit(UmaCensus::Kind::MemoryType,
+                                vma_handle->second.base + phys_handle->first,
+                                phys_handle->second.size, 0, 0, 0, u64(memory_type));
 
                 // Carve a new dmem area in dmem_map, update memory type there
                 auto dmem_handle =
@@ -1342,6 +1389,8 @@ void MemoryManager::NameVirtualRange(VAddr virtual_addr, u64 size, std::string_v
     while (remaining_size > 0 && it != vma_map.end()) {
         const u64 start_in_vma = current_addr - it->second.base;
         const u64 size_in_vma = std::min<u64>(remaining_size, it->second.size - start_in_vma);
+        UmaCensus::Emit(UmaCensus::Kind::Name, current_addr, size_in_vma, 0, 0, 0,
+                        std::hash<std::string_view>{}(name));
         // Nothing needs to be done to free VMAs
         if (!it->second.IsFree()) {
             if (size_in_vma < it->second.size) {
@@ -1358,6 +1407,7 @@ void MemoryManager::NameVirtualRange(VAddr virtual_addr, u64 size, std::string_v
 
         // Check if VMA can be merged with adjacent areas after modifications.
         it = MergeAdjacent(vma_map, it);
+        CensusVma(it->second);
         if (it->second.base + it->second.size <= current_addr) {
             // If we're now in the next VMA, then go to the next handle.
             it++;

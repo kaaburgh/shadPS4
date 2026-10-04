@@ -4,9 +4,11 @@
 #pragma once
 
 #include <condition_variable>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <queue>
+#include "common/uma_census.h"
 
 #include "common/interval_set.h"
 #include "common/unique_function.h"
@@ -23,6 +25,7 @@ class VkCtxScope;
 namespace Vulkan {
 
 class Instance;
+class UmaTimelineObserver;
 
 struct RenderAttachment {
     vk::ImageView image_view;
@@ -364,7 +367,7 @@ public:
     void Flush();
 
     /// Sends the current execution context to the GPU and waits for it to complete.
-    void Finish();
+    void Finish(uint64_t caller = 0);
 
     /// Waits for the given tick to trigger on the GPU.
     void Wait(u64 tick);
@@ -445,6 +448,40 @@ public:
         priority_pending_ops_cv.notify_one();
     }
 
+    uint64_t CensusSubmittingTick() const {
+        return census_submit_tick;
+    }
+    uint64_t CensusContext() const {
+        return census_context;
+    }
+    uint64_t CensusSession() const {
+        return sessions.empty() ? 0 : sessions.back().census_id;
+    }
+    void Census(UmaCensus::Kind kind, uint64_t addr = 0, uint64_t size = 0, uint64_t a = 0,
+                uint64_t b = 0, uint64_t c = 0, uint32_t flags = 0) const {
+        if (UmaCensus::Enabled())
+            UmaCensus::Emit(kind, addr, size, census_context, CensusSession(), CurrentTick(), a, b,
+                            c, flags, census_command);
+    }
+
+    class CensusCommandScope {
+    public:
+        CensusCommandScope(Scheduler& scheduler, uint64_t type)
+            : scheduler{scheduler}, previous{scheduler.census_command} {
+            if (UmaCensus::Enabled()) {
+                scheduler.census_command = UmaCensus::NewId();
+                scheduler.Census(UmaCensus::Kind::CommandBegin, 0, 0, type);
+            }
+        }
+        ~CensusCommandScope() {
+            scheduler.Census(UmaCensus::Kind::CommandEnd);
+            scheduler.census_command = previous;
+        }
+
+    private:
+        Scheduler& scheduler;
+        uint64_t previous;
+    };
     static std::mutex submit_mutex;
 
 private:
@@ -461,7 +498,12 @@ private:
     DynamicState dynamic_state;
     SessionFunc on_session{};
     SubmitFunc on_submit{};
+    uint64_t census_submit_tick{};
+    uint64_t census_command{};
+    uint64_t census_context{};
+    std::unique_ptr<UmaTimelineObserver> census_observer;
     struct Session {
+        uint64_t census_id{};
         vk::CommandBuffer upload{};
         vk::CommandBuffer primary{};
     };

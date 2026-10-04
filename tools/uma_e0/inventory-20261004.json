@@ -62,5 +62,15 @@
     "branch": "detached",
     "status": "clean",
     "relation": "139\t8"
+  },
+  {
+    "path": "/home/ubuntu/bb-shadPS4-correctness-instrumentation",
+    "root": "/home/ubuntu/bb-shadPS4-correctness-instrumentation",
+    "head": "42312e3aea1e5350dd04c6d1e253e1bcdc082f09",
+    "branch": "experiment/bb-resource-cache-stats",
+    "status": "dirty",
+    "relation": "independent investigation repository; not shadPS4 history",
+    "tracked_changes": 2,
+    "untracked_entries": 399
   }
 ]

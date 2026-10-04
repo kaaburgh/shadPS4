@@ -7,6 +7,7 @@
 #include "common/debug.h"
 #include "common/polyfill_thread.h"
 #include "common/thread.h"
+#include "common/uma_census.h"
 #include "core/debug_state.h"
 #include "core/emulator_settings.h"
 #include "core/libraries/kernel/process.h"
@@ -180,6 +181,9 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
         }
         case PM4ItOpcode::DumpConstRam: {
             const auto* dump_const = reinterpret_cast<const PM4DumpConstRam*>(header);
+            if (rasterizer)
+                rasterizer->Census(UmaCensus::Kind::CpuWrite, dump_const->Address<VAddr>(),
+                                   dump_const->Size(), u64(PM4ItOpcode::DumpConstRam));
             memcpy(dump_const->Address<void*>(),
                    cblock.constants_heap.data() + dump_const->Offset(), dump_const->Size());
             break;
@@ -646,6 +650,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
                         u64* results = event->Address<u64*>();
                         for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
+                            if (rasterizer)
+                                rasterizer->Census(UmaCensus::Kind::CpuWrite,
+                                                   reinterpret_cast<VAddr>(results), 8,
+                                                   u64(PM4ItOpcode::EventWrite));
                             *results = pixel_counter | OcclusionCounterValidMask;
                         }
                         pixel_counter += OcclusionCounterStep;
@@ -655,18 +663,32 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::EventWriteEos: {
                 const auto* event_eos = reinterpret_cast<const PM4CmdEventWriteEos*>(header);
+                const auto census_packet = UmaCensus::Enabled() ? UmaCensus::NewId() : 0;
+                UmaCensus::OriginScope census_origin{u64(PM4ItOpcode::EventWriteEos),
+                                                     census_packet};
+                if (rasterizer)
+                    rasterizer->Census(UmaCensus::Kind::Packet, event_eos->Address<VAddr>(), 4,
+                                       u64(PM4ItOpcode::EventWriteEos), event_eos->cmd_info,
+                                       census_packet);
                 if (rasterizer) {
                     rasterizer->OnFence();
                 }
-                event_eos->SignalFence([](void* address, u64 data, u32 num_bytes) {
-                    auto* memory = Core::Memory::Instance();
-                    ASSERT(memory->TryWriteBacking(address, &data, num_bytes));
-                });
+                event_eos->SignalFence(
+                    [this, census_packet](void* address, u64 data, u32 num_bytes) {
+                        if (rasterizer)
+                            rasterizer->Census(UmaCensus::Kind::CpuWrite,
+                                               reinterpret_cast<VAddr>(address), num_bytes,
+                                               u64(PM4ItOpcode::EventWriteEos), 0, census_packet);
+                        auto* memory = Core::Memory::Instance();
+                        ASSERT(memory->TryWriteBacking(address, &data, num_bytes));
+                    });
                 if (event_eos->command == PM4CmdEventWriteEos::Command::GdsStore) {
                     ASSERT(event_eos->size == 1);
                     if (rasterizer) {
-                        rasterizer->Finish();
+                        rasterizer->Finish(7);
                         const u32 value = rasterizer->ReadDataFromGds(event_eos->gds_index);
+                        rasterizer->Census(UmaCensus::Kind::CpuWrite, event_eos->Address<VAddr>(),
+                                           4, u64(PM4ItOpcode::EventWriteEos), 0, census_packet);
                         *event_eos->Address() = value;
                     }
                 }
@@ -674,15 +696,34 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::EventWriteEop: {
                 const auto* event_eop = reinterpret_cast<const PM4CmdEventWriteEop*>(header);
+                const auto census_packet = UmaCensus::Enabled() ? UmaCensus::NewId() : 0;
+                UmaCensus::OriginScope census_origin{u64(PM4ItOpcode::EventWriteEop),
+                                                     census_packet};
+                if (rasterizer)
+                    rasterizer->Census(
+                        UmaCensus::Kind::Packet, reinterpret_cast<VAddr>(event_eop->Address<u32>()),
+                        event_eop->data_sel == DataSelect::Data32Low
+                            ? 4
+                            : (event_eop->data_sel == DataSelect::None ? 0 : 8),
+                        u64(PM4ItOpcode::EventWriteEop), event_eop->data_control, census_packet);
                 if (rasterizer) {
                     rasterizer->OnFence();
                 }
                 event_eop->SignalFence(
-                    [](void* address, u64 data, u32 num_bytes) {
+                    [this, census_packet](void* address, u64 data, u32 num_bytes) {
+                        if (rasterizer)
+                            rasterizer->Census(UmaCensus::Kind::CpuWrite,
+                                               reinterpret_cast<VAddr>(address), num_bytes,
+                                               u64(PM4ItOpcode::EventWriteEop), 0, census_packet);
                         auto* memory = Core::Memory::Instance();
                         ASSERT(memory->TryWriteBacking(address, &data, num_bytes));
                     },
-                    [] { Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop); });
+                    [this, census_packet] {
+                        if (rasterizer)
+                            rasterizer->Census(UmaCensus::Kind::Irq, 0, 0,
+                                               u64(PM4ItOpcode::EventWriteEop), 0, census_packet);
+                        Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop);
+                    });
                 break;
             }
             case PM4ItOpcode::DmaData: {
@@ -731,6 +772,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     if (rasterizer) {
                         rasterizer->OnFence();
                     }
+                    if (rasterizer)
+                        rasterizer->Census(UmaCensus::Kind::CpuWrite,
+                                           reinterpret_cast<VAddr>(address), data_size,
+                                           u64(PM4ItOpcode::WriteData));
                     std::memcpy(address, write_data->data, data_size);
                 } else {
                     UNREACHABLE();
@@ -750,11 +795,19 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             case PM4ItOpcode::MemSemaphore: {
                 const auto* mem_semaphore = reinterpret_cast<const PM4CmdMemSemaphore*>(header);
                 if (mem_semaphore->IsSignaling()) {
+                    if (rasterizer)
+                        rasterizer->Census(UmaCensus::Kind::CpuWrite,
+                                           mem_semaphore->Address<VAddr>(), 8,
+                                           u64(PM4ItOpcode::MemSemaphore));
                     mem_semaphore->Signal();
                 } else {
                     while (!mem_semaphore->Signaled()) {
                         YIELD_GFX();
                     }
+                    if (rasterizer)
+                        rasterizer->Census(UmaCensus::Kind::CpuWrite,
+                                           mem_semaphore->Address<VAddr>(), 8,
+                                           u64(PM4ItOpcode::MemSemaphore));
                     mem_semaphore->Decrement();
                 }
                 break;
@@ -1071,6 +1124,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                 if (rasterizer) {
                     rasterizer->OnFence();
                 }
+                if (rasterizer)
+                    rasterizer->Census(UmaCensus::Kind::CpuWrite, write_data->Address<VAddr>(),
+                                       data_size, u64(PM4ItOpcode::WriteData));
                 std::memcpy(write_data->Address<void*>(), write_data->data, data_size);
             } else {
                 UNREACHABLE();
@@ -1080,11 +1136,17 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         case PM4ItOpcode::MemSemaphore: {
             const auto* mem_semaphore = reinterpret_cast<const PM4CmdMemSemaphore*>(header);
             if (mem_semaphore->IsSignaling()) {
+                if (rasterizer)
+                    rasterizer->Census(UmaCensus::Kind::CpuWrite, mem_semaphore->Address<VAddr>(),
+                                       8, u64(PM4ItOpcode::MemSemaphore));
                 mem_semaphore->Signal();
             } else {
                 while (!mem_semaphore->Signaled()) {
                     YIELD_ASC(vqid);
                 }
+                if (rasterizer)
+                    rasterizer->Census(UmaCensus::Kind::CpuWrite, mem_semaphore->Address<VAddr>(),
+                                       8, u64(PM4ItOpcode::MemSemaphore));
                 mem_semaphore->Decrement();
             }
             break;
@@ -1099,11 +1161,27 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
         case PM4ItOpcode::ReleaseMem: {
             const auto* release_mem = reinterpret_cast<const PM4CmdReleaseMem*>(header);
+            const auto census_packet = UmaCensus::Enabled() ? UmaCensus::NewId() : 0;
+            UmaCensus::OriginScope census_origin{u64(PM4ItOpcode::ReleaseMem), census_packet};
+            if (rasterizer)
+                rasterizer->Census(UmaCensus::Kind::Packet, release_mem->Address<VAddr>(),
+                                   release_mem->data_sel == DataSelect::Data32Low ? 4 : 8,
+                                   u64(PM4ItOpcode::ReleaseMem),
+                                   u64(release_mem->data_sel.Value()) |
+                                       (u64(release_mem->int_sel.Value()) << 32),
+                                   census_packet);
             if (rasterizer) {
                 rasterizer->OnFence();
             }
+            if (rasterizer && release_mem->data_sel != DataSelect::GdsMemStore)
+                rasterizer->Census(UmaCensus::Kind::CpuWrite, release_mem->Address<VAddr>(),
+                                   release_mem->data_sel == DataSelect::Data32Low ? 4 : 8,
+                                   u64(PM4ItOpcode::ReleaseMem), 0, census_packet);
             release_mem->SignalFence(
-                [pipe_id = queue.pipe_id] {
+                [this, census_packet, pipe_id = queue.pipe_id] {
+                    if (rasterizer)
+                        rasterizer->Census(UmaCensus::Kind::Irq, 0, 0, u64(PM4ItOpcode::ReleaseMem),
+                                           pipe_id, census_packet);
                     Platform::IrqC::Instance()->Signal(static_cast<Platform::InterruptId>(pipe_id));
                 },
                 [this](VAddr dst, u16 gds_index, u16 num_dwords) {
