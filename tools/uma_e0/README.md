@@ -5,76 +5,94 @@ first in **d8e993db**, with the verified command/Finish/backing-write correction
 in **76a61987**. No imports, synchronization changes, new protection/watchers,
 barriers, Finish calls, upload/readback decisions or shader translation changes.
 
-## Capture
+## Automatic death/reload campaign
 
-The recorder is opt-in: `SHADPS4_UMA_E0_CAPTURE=/absolute/new/directory`.
-Directory creation is exclusive; existing captures are never overwritten.
-`SHADPS4_UMA_E0_MAX_BYTES` optionally sets the events.bin budget (default 512 MiB).
-At the budget limit events are dropped and counted, not silently rotated.
-The writer updates metadata every 250 ms and at normal/quick shutdown. A killed
-process can leave incomplete metadata/tail; analyzer never promotes that result.
+The canonical runner is now on `research/uma-e0-deathloop-harness`, based exactly
+on E0 2437a553. Original E0 remains unchanged. Emulator source changes: **zero**.
+Current E0/upstream does **not** contain the historical .bbpad reader or CLI from
+79866f24; that commit is on separate fork history. The old death loop actually
+used event-gated controller input and filesystem/PlayGo callbacks, not .bbpad.
+See [reconstruction](../../docs/research/uma-deathloop-reconstruction.md).
 
-Use the existing verified disposable target, including its independent `app` and
-`app-UPDATE` siblings and copy receipt. Existing source trees and the E0b archive
-remain untouched. Raw logs/screenshots are private and must not be committed.
+`--death-loop` automatically navigates the existing startup warning, offline
+selector and Continue, then completes N death/reload iterations without Enter.
+It watches real host files via Linux inotify and existing splash/PlayGo INFO logs.
+Each iteration explicitly presses movement, confirms the compound death/load
+sequence, releases movement during loading, observes the post-load save sequence,
+and starts the next iteration after the observation hold. Every phase is bounded;
+missing markers or notification overflow fail visibly rather than fabricate success.
+The oracle is a **strong filesystem lifecycle proxy**, independently checked with
+world/death screenshots. It is not an exact first-visible/controllable-frame oracle.
+Graphics/explosion screenshot scores do not drive the loop or filter the symptom.
 
-On the operator's active X11 display (historically :1; use its actual DISPLAY and
-XAUTHORITY), run these two commands **sequentially**. Config override uses the
-existing historical runner's TemporaryReadbacksOverride and restores exact bytes.
-All other selected GPU settings, input configuration and save/cache state remain
-the operator's existing state. Upstream IPC disables automatic XML memory patches;
-this runner sends no PATCH_MEMORY commands. This is recorded explicitly. The
-current profile has no patch XML files. If the intended scenario requires such a
-patch, these commands do not establish that scenario until its patch input is
-provided through the existing upstream IPC patch route. Each launch records their hashes;
-compare launch.json before treating runs as comparable. Persistent caches can
-warm and save state can drift; this is exploratory-unverified evidence.
+Operator setup once: prepare the intended Bloodborne 1.09 Central Yharnam save
+and facing. The existing profile already supplies the working checkpoint.
+The runner makes an independent profile copy via XDG_DATA_HOME and records the
+actual save bundle opened by the game; on this host it is
+`home/1000/savedata/CUSA00207/SPRJ0005`, despite app ID CUSA03173. It never resets,
+writes or replaces the original profile/save. Repeated launches copy the same
+seed. Supply another prepared shadPS4 profile with `--profile-template` if needed.
+Keyboard mapping must retain Cross=n and LeftY plus=s, as in the verified config.
+
+The old Enter + continuous `s` hold is retained only as `--x11-hold --death-hold`.
+It is a diagnostic fallback and cannot be called a completed lifecycle campaign.
+`--seconds` is an overall emulator budget; `--iterations` counts confirmed cycles;
+stage/iteration timeouts bound progress. Finishing N cycles stops early. Timers
+settle observed boundaries and control watchdogs; elapsed time never marks death.
+
+## Future full Disabled / Precise captures (not run during implementation)
+
+Use an active X11 display and XAUTHORITY, or a private Xvfb server as in the
+validation note. The unchanged E0 producer generates substantial data in actual
+3D gameplay: roughly 5–6 GB for two cycles here. Disk output lost records; bounded
+RAM-backed output achieved zero drops. Every capture is checked, and any drops
+cause failure even when lifecycle completion succeeded. RAM output is not a
+universal guarantee; do not accept lossy data as exact evidence.
+
+The following bounded four-iteration commands fit the demonstrated host's 16 GiB
+/dev/shm more comfortably than a long campaign. Confirm available RAM and tmpfs
+space before increasing N. Stage out and remove only the successfully retained
+first RAM output before starting the second. Do not delete historical evidence.
 
 ```bash
-SHADPS4_UMA_E0_MAX_BYTES=2147483648 python3 /media/ubuntu/UsbSSD447G/shadps4/shadPS4-uma-e0/tools/uma_e0/run_capture.py --mode Disabled --seconds 300 --death-loop --death-hold 180 --screenshots --display "$DISPLAY" --xauthority "$XAUTHORITY" --output /media/ubuntu/UsbSSD447G/shadps4/runs/uma-e0-full-disabled
+SHADPS4_UMA_E0_MAX_BYTES=12884901888 python3 /media/ubuntu/UsbSSD447G/shadps4/shadPS4-uma-deathloop/tools/uma_e0/run_capture.py --mode Disabled --death-loop --iterations 4 --seconds 300 --stage-timeout 110 --iteration-timeout 110 --display "$DISPLAY" --xauthority "$XAUTHORITY" --output /dev/shm/uma-e0-full-disabled
 ```
 
 ```bash
-SHADPS4_UMA_E0_MAX_BYTES=2147483648 python3 /media/ubuntu/UsbSSD447G/shadps4/shadPS4-uma-e0/tools/uma_e0/run_capture.py --mode Precise --seconds 300 --death-loop --death-hold 180 --screenshots --display "$DISPLAY" --xauthority "$XAUTHORITY" --output /media/ubuntu/UsbSSD447G/shadps4/runs/uma-e0-full-precise
+SHADPS4_UMA_E0_MAX_BYTES=12884901888 python3 /media/ubuntu/UsbSSD447G/shadps4/shadPS4-uma-deathloop/tools/uma_e0/run_capture.py --mode Precise --death-loop --iterations 4 --seconds 300 --stage-timeout 110 --iteration-timeout 110 --display "$DISPLAY" --xauthority "$XAUTHORITY" --output /dev/shm/uma-e0-full-precise
 ```
 
-Reach **Central Yharnam**, confirm the same checkpoint and facing/direction, then
-press Enter in the capture terminal. This reuses the existing external X11 helper
-holding `s` (configured LeftY plus = historical death direction 255) for 180 s.
-Confirm actual key bindings in launch.json input hashes and actual repeated
-fall/death/reload from screenshots; the key hold is **not a lifecycle oracle**.
-The 300-second budget includes menu navigation and operator confirmation. If the
-checkpoint cannot be reached in time, the run remains a startup/menu observation.
-Both runs must use the same navigation/death route. The script bounds launch,
-input hold and shutdown and uses upstream IPC STOP. It cannot inherit old
-source-dependent SHADPS4_BB_DEATH_LOOP or .bbpad behavior on upstream.
+Only the readbacks mode differs. Profiles, GPU settings, input plan and seed save
+hashes must match. Logging duplicate suppression is disabled in the copied profile
+so the two required PlayGo calls remain observable; it is recorded in launch data.
+Upstream IPC disables automatic XML patches, and this runner sends no PATCH_MEMORY
+commands. Current profile has none. Save/keys/profile copies stay private.
 
-The historical full benchmark is
-`/home/ubuntu/bb-shadPS4-correctness-instrumentation/tools/run_bb_death_reload_benchmark.py`.
-Only its independent config helper is imported. Reused external input/screenshot:
-`/media/ubuntu/UsbSSD447G/shadps4/work/bb-1.09-exploration/diagnostics/x11_control.py`
-with its existing `x11-venv/bin/python`. Previous instrumentation branches, patches
-and source-dependent replay files are inventoried, not cherry-picked.
+## Artifacts and offline analysis
 
-Artifacts in each output directory:
+Return these allowlisted artifacts from both outputs, **excluding profile-xdg**:
 
-* `launch.json`: exact binary/source/harness/helper/config/patch/input/receipt
-  identities, bounds, termination and operator-reported checkpoint.
-* `capture/metadata.json`: producer/build/host/device/config/game/timestamps/drops.
-* `capture/events.bin`: unchanged raw 104-byte records.
-* `capture/summary.json` and `summary.txt`: aggregate distributions and limits.
-* `screen-*.png` and `emulator-private.log`: private scenario/runtime checks.
+* `launch.json`: binary/E0 base/harness/component/input-plan/seed/actual-save hashes,
+  requested/completed iterations, bounds, stall/failure and emulator/device-loss status.
+* `lifecycle.jsonl`, `lifecycle-summary.json`, `host-events.jsonl`, `input-events.jsonl`.
+* `iteration-*.png`, optional `screen-*.png`, and private `emulator-private.log`.
+* `capture/metadata.json`, `events.bin`, `transport-check.json`.
+* Semantic `summary.json`/`summary.txt` when generated with the unchanged analyzer.
 
-Return **both complete output directories**, preferably separate tar.gz archives.
-Raw events plus metadata and launch.json are needed to revise classifications.
-Return screenshots for the route/death/reload oracle. Logs remain private.
-
-Offline replay:
+Do not archive whole output directories indiscriminately: `profile-xdg` contains
+copied private saves, keys and account state. Preserve raw data when staging out.
+The structural transport check verifies every sequence with bounded memory and
+rejects dropped, truncated or unclean captures. Full E0 semantic analysis is
+unchanged, but deferred for large campaigns unless `--analyze` is specified:
 
 ```bash
-python3 /media/ubuntu/UsbSSD447G/shadps4/shadPS4-uma-e0/tools/uma_e0/analyze.py /media/ubuntu/UsbSSD447G/shadps4/runs/uma-e0-full-disabled/capture
-python3 /media/ubuntu/UsbSSD447G/shadps4/shadPS4-uma-e0/tools/uma_e0/analyze.py /media/ubuntu/UsbSSD447G/shadps4/runs/uma-e0-full-precise/capture
+python3 /media/ubuntu/UsbSSD447G/shadps4/shadPS4-uma-deathloop/tools/uma_e0/analyze.py /path/to/retained/capture
 ```
+
+Transport remains opt-in through SHADPS4_UMA_E0_CAPTURE; format, event meanings,
+signal safety, scheduler observation, guest synchronization, BufferCache and
+MemoryTracker are unchanged. A larger byte budget changes only the existing file
+budget; no emitter sampling or event suppression was added.
 
 ## Events and trustworthy facts
 
@@ -162,6 +180,7 @@ write overlaps are **possible existing mirror staleness**, not a stale-byte orac
 
 ## Validation and remaining scope
 
-See `docs/research/uma-e0-validation.md` for commands, private artifact paths,
-upstream test failures, bounded runtime results and the remaining coverage limits.
+See `docs/research/uma-e0-validation.md` for original E0 producer validation and
+`docs/research/uma-deathloop-validation.md` for the restored harness, V1–V4 results,
+transport negative results and retained artifact paths.
 Full death/reload captures are operator work; they were not run as a campaign.

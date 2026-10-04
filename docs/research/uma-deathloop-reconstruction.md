@@ -99,3 +99,11 @@ the route before claiming equivalence. Use existing X11 input/screenshot helpers
 add persistent press/release orchestration so each confirmed death releases input
 and each next-start explicitly starts the next iteration. No fixed-time success.
 A source-dependent .bbpad loop is unnecessary if this external oracle works.
+
+## Runtime correction during external validation
+
+The current game actually opens CUSA00207/SPRJ0005 in its profile. The historical
+flat SPRJ0005 path is not canonical on current source. The external observer now
+selects the actually opened prepared bundle, records its initial identity, and
+excludes other/backup directories. No save bytes were converted or originals
+modified; the cloned profile already contains the working modern bundle.

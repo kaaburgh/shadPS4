@@ -1,0 +1,13 @@
+{
+  "schema": "bb-external-deathloop-plan/v1",
+  "source": "historical BBLoadDiag event-gated route; not a converted .bbpad",
+  "checkpoint": "operator-prepared Bloodborne 1.09 Central Yharnam save and facing",
+  "cross_key": "n",
+  "death_axis_key": "s",
+  "death_axis": "LeftY=255; release gives neutral128",
+  "startup_settle_seconds": 2,
+  "selector_settle_seconds": 5,
+  "offline_settle_seconds": 1.5,
+  "observation_hold_seconds": 4,
+  "oracle": "compound host filesystem events plus existing INFO PlayGo/splash logs; strong proxy"
+}
