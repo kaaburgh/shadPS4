@@ -303,5 +303,32 @@ int main() {
     cp.cv.notify_all();
     processor.join();
   }
+  { // A prior Finish proof must not hide a later terminal waiter failure.
+    SubmittedPrefix<int> prefix;
+    auto t =
+        *prefix.SubmitCurrent(1, [](auto &) {}, [](auto) { return 0; }, [] {});
+    std::atomic<bool> started{}, fail{};
+    std::atomic<int> wake{};
+    GuestCompletionLane lane(
+        prefix.Identity(),
+        [&](auto &, std::stop_token stop) {
+          started = true;
+          while (!fail && !stop.stop_requested())
+            std::this_thread::sleep_for(1ms);
+          return WaitStatus::Failed;
+        },
+        [&] { ++wake; });
+    assert(lane.Enqueue(t, {}));
+    while (!started)
+      std::this_thread::sleep_for(1ms);
+    auto proof = *prefix.ObserveCompletion(t, [](auto) { return 0; });
+    lane.CompleteThrough(proof);
+    fail = true;
+    for (int i = 0; i < 2000 && !wake; ++i)
+      std::this_thread::sleep_for(1ms);
+    assert(lane.Failed());
+    lane.Drain([](auto &) { assert(false); });
+    assert(!lane.Enqueue(t, {}));
+  }
   std::cout << "production completion adapters: PASS\n";
 }

@@ -205,7 +205,7 @@ private:
                 if (!accepting || stop.stop_requested())
                     return;
                 active.reset();
-                if (status == WaitStatus::Completed || job->ticket.Value() <= completed_through) {
+                if (status == WaitStatus::Completed) {
                     job->observed_ns = CompletionTime();
                     job->ready_ns = CompletionTime();
                     auto& order = queues[job->action.queue];
@@ -217,6 +217,7 @@ private:
                     accepting = false;
                     pending.clear();
                     queues.clear();
+                    cancelled += depth;
                     depth = 0;
                     notify = failed;
                 }
