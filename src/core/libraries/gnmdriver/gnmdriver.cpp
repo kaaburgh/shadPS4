@@ -27,8 +27,12 @@
 extern Frontend::WindowSDL* g_window;
 std::unique_ptr<Vulkan::Presenter> presenter;
 std::unique_ptr<AmdGpu::Liverpool> liverpool;
-
 namespace Libraries::GnmDriver {
+
+void StopCommandProcessor() {
+    if (liverpool)
+        liverpool->Stop();
+}
 
 using namespace AmdGpu;
 

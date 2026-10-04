@@ -11,6 +11,7 @@ class SymbolsResolver;
 }
 
 namespace Libraries::GnmDriver {
+void StopCommandProcessor();
 
 using namespace Kernel;
 

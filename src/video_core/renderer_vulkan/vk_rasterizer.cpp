@@ -52,7 +52,9 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     });
 }
 
-Rasterizer::~Rasterizer() = default;
+Rasterizer::~Rasterizer() {
+    liverpool->Stop();
+}
 
 bool Rasterizer::FilterDraw() {
     const auto& regs = liverpool->regs;
@@ -404,8 +406,8 @@ void Rasterizer::OnSubmit() {
     runtime.TickFrame();
 }
 
-void Rasterizer::OnFence() {
-    texture_cache.ProcessDownloadImages();
+std::optional<VideoCore::Sync::CompletedPrefix> Rasterizer::OnFence() {
+    return texture_cache.ProcessDownloadImages();
 }
 
 bool Rasterizer::BindResources(const Pipeline* pipeline) {

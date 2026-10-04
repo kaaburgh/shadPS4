@@ -37,6 +37,7 @@
 #include "core/file_format/psf.h"
 #include "core/file_format/trp.h"
 #include "core/file_sys/fs.h"
+#include "core/libraries/gnmdriver/gnmdriver.h"
 #include "core/libraries/kernel/kernel.h"
 #include "core/libraries/libs.h"
 #include "core/libraries/np/np_handler.h"
@@ -91,6 +92,7 @@ void Emulator::Shutdown() {
     if (exit_done) {
         return;
     }
+    Libraries::GnmDriver::StopCommandProcessor();
     Common::Log::Flush();
     Libraries::SaveData::Backup::StopThread();
     Storage::DataBase::Instance().Close();

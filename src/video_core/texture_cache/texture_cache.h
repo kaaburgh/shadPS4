@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #pragma once
+#include "video_core/renderer_vulkan/vk_scheduler.h"
 
 #include <mutex>
 #include <absl/container/flat_hash_map.h>
@@ -114,7 +115,7 @@ public:
     void UnmapMemory(VAddr cpu_addr, size_t size);
 
     /// Schedules a copy of pending images for download back to CPU memory.
-    void ProcessDownloadImages();
+    std::optional<VideoCore::Sync::CompletedPrefix> ProcessDownloadImages();
 
     /// Retrieves the image handle of the image with the provided attributes.
     [[nodiscard]] ImageId FindImage(ImageDesc& desc, bool exact_fmt = false);
@@ -309,7 +310,8 @@ private:
     }
 
     /// Copies image memory back to CPU.
-    void DownloadImageMemory(ImageId image_id, bool sync = false);
+    std::optional<VideoCore::Sync::CompletedPrefix> DownloadImageMemory(ImageId image_id,
+                                                                      bool sync = false);
 
     /// Register image in the page table
     void RegisterImage(ImageId image);

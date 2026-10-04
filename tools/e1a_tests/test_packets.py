@@ -1,4 +1,4 @@
-"""Current real PM4 helpers: positive characterization + desired expected failures."""
+"""E1B real owned-packet/lane adapters; Release-GDS retains its E1C expected failure."""
 import os
 from pathlib import Path
 import shutil
@@ -16,33 +16,29 @@ class CurrentPacketHelpers(unittest.TestCase):
         if not compiler:raise RuntimeError('C++23 compiler required for real packet regression probe')
         cls.temp=tempfile.TemporaryDirectory();cls.addClassCleanup(cls.temp.cleanup)
         binary=Path(cls.temp.name)/'packet-probe'
-        subprocess.run([compiler,'-std=c++23','-O2','-I',str(PROBE_DIR/'shims'),'-I',str(ROOT/'src'),
+        subprocess.run([compiler,'-std=c++23','-O2','-pthread','-I',str(PROBE_DIR/'shims'),'-I',str(ROOT/'src'),
                         str(PROBE_DIR/'packet_probe.cpp'),'-o',str(binary)],check=True)
         output=subprocess.check_output([str(binary)],text=True)
         cls.observed={line.split()[0]:[int(v) for v in line.split()[1:]] for line in output.splitlines()}
 
     def test_eop_and_release_current_store_before_irq_order(self):
-        self.assertEqual(self.observed['eop'],[1,1,1])
-        self.assertEqual(self.observed['release_scalar'],[1,1,1])
+        self.assertEqual(self.observed['eop_after'],[1,1,1])
+        self.assertEqual(self.observed['release_scalar_after'],[1,1,1])
 
     def test_eos_gds_helper_does_not_do_the_external_finish_path(self):
         self.assertEqual(self.observed['eos_gds_helper_no_store'],[0])
 
-    @unittest.expectedFailure
     def test_desired_eop_store_not_before_host_completion(self):
-        self.assertEqual(self.observed['eop'][0],0,'real helper stores with host completion still false')
+        self.assertEqual(self.observed['eop'][0],0,'production adapter must retain the store until completion')
 
-    @unittest.expectedFailure
     def test_desired_eos_store_not_before_host_completion(self):
-        self.assertEqual(self.observed['eos'][0],0,'real helper stores with host completion still false')
+        self.assertEqual(self.observed['eos'][0],0,'production adapter must retain the store until completion')
 
-    @unittest.expectedFailure
     def test_desired_release_scalar_not_before_host_completion(self):
-        self.assertEqual(self.observed['release_scalar'][0],0,'real helper stores with host completion still false')
+        self.assertEqual(self.observed['release_scalar'][0],0,'production adapter must retain the store until completion')
 
-    @unittest.expectedFailure
     def test_desired_irq_only_not_before_host_completion(self):
-        self.assertEqual(self.observed['eop_irq_only'],[0,0],'real helper invokes IRQ during parsing')
+        self.assertEqual(self.observed['eop_irq_only'],[0,0],'production adapter must retain the IRQ until completion')
 
     @unittest.expectedFailure
     def test_desired_release_gds_irq_waits_for_transfer_and_guest_visibility(self):

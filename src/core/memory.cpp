@@ -229,6 +229,71 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
     return true;
 }
 
+bool MemoryManager::TryWriteCompletion(VAddr address, u64 value, u32 size, bool direct) {
+    if ((size != 4 && size != 8) || address > UINT64_MAX - size)
+        return false;
+    if (direct) {
+        // Serialize VMM mutation, but release the VMA read lock before a potential
+        // tracking fault/readback. Fault handling can itself query/write backing.
+        std::scoped_lock mapping_guard{unmap_mutex};
+        {
+            std::shared_lock lock{mutex};
+            if (!IsValidMapping(address, size))
+                return false;
+            auto vma = FindVMA(address);
+            for (auto at = address; at < address + size; ++vma) {
+                if (!vma->second.IsMapped() || False(vma->second.prot & MemoryProt::CpuWrite))
+                    return false;
+                at = std::min<VAddr>(address + size, vma->second.base + vma->second.size);
+            }
+        }
+        std::memcpy(reinterpret_cast<void*>(address), &value, size);
+        return true;
+    }
+    std::shared_lock lock{mutex};
+    if (!IsValidMapping(address, size))
+        return false;
+    struct Piece {
+        u8* backing;
+        VAddr va;
+        PAddr pa;
+        u32 size;
+        u32 type;
+    };
+    std::array<Piece, 8> pieces{};
+    u32 count = 0, remaining = size;
+    auto at = address;
+    // Validate the entire destination before making any part visible. Scalar writes
+    // can cross a guest physical segment; no dynamic allocation or raw VA retention.
+    while (remaining) {
+        const auto& vma = FindVMA(at)->second;
+        if (!vma.IsMapped() || !HasPhysicalBacking(vma))
+            return false;
+        const auto offset = at - vma.base;
+        auto physical = vma.phys_areas.upper_bound(offset);
+        if (physical == vma.phys_areas.begin())
+            return false;
+        --physical;
+        const auto delta = offset - physical->first;
+        if (delta >= physical->second.size || count == pieces.size())
+            return false;
+        const u32 bytes = std::min<u64>(remaining, physical->second.size - delta);
+        const auto pa = physical->second.base + delta;
+        pieces[count++] = {impl.BackingBase() + pa, at, pa, bytes, u32(vma.type)};
+        at += bytes;
+        remaining -= bytes;
+    }
+    auto* source = reinterpret_cast<const u8*>(&value);
+    for (u32 i = 0; i < count; ++i) {
+        const auto& piece = pieces[i];
+        UmaCensus::Emit(UmaCensus::Kind::BackingWrite, piece.va, piece.size, 0, 0, 0, piece.pa,
+                        UmaCensus::origin_tag, UmaCensus::origin_packet, piece.type);
+        std::memcpy(piece.backing, source, piece.size);
+        source += piece.size;
+    }
+    return true;
+}
+
 PAddr MemoryManager::PoolExpand(PAddr search_start, PAddr search_end, u64 size, u64 alignment) {
     std::scoped_lock lk{mutex, unmap_mutex};
     alignment = alignment > 0 ? alignment : 64_KB;

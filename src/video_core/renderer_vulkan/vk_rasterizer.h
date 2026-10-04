@@ -86,7 +86,7 @@ public:
         scheduler.Census(kind, addr, size, a, b, c);
     }
     void OnSubmit();
-    void OnFence();
+    std::optional<VideoCore::Sync::CompletedPrefix> OnFence();
 
     PipelineCache& GetPipelineCache() {
         return pipeline_cache;

@@ -3,6 +3,9 @@
 
 #pragma once
 
+#include <fstream>
+#include "video_core/synchronization/guest_completion.h"
+
 #include <condition_variable>
 #include <coroutine>
 #include <exception>
@@ -91,9 +94,9 @@ public:
         vo_port = port;
     }
 
-    void BindRasterizer(Vulkan::Rasterizer* rasterizer_) {
-        rasterizer = rasterizer_;
-    }
+    void BindRasterizer(Vulkan::Rasterizer* rasterizer_);
+    void Stop();
+    void StopCompletionLane();
 
     template <bool wait_done = false>
     void SendCommand(auto&& func) {
@@ -191,6 +194,20 @@ private:
     Task ProcessCompute(std::span<const u32> acb, u32 vqid);
 
     void ProcessCommands();
+    void QueueScalar(VideoCore::Sync::ScalarCompletion action,
+                     std::optional<VideoCore::Sync::CompletedPrefix> completed = {});
+    void DrainCompletions();
+    void PublishScalar(const VideoCore::Sync::GuestCompletionLane::Ready& ready);
+    struct CompletionOwner {
+        std::recursive_mutex mutex;
+        Liverpool* target{};
+    };
+    std::shared_ptr<CompletionOwner> completion_owner;
+    std::shared_ptr<VideoCore::Sync::GuestCompletionLane> completion_lane;
+    std::atomic<bool> completion_stopping{};
+    std::ofstream completion_trace;
+    uint64_t completion_count{}, prefix_count{}, empty_prefix_count{}, synchronous_count{};
+
     void Process(std::stop_token stoken);
 
     struct GpuQueue {

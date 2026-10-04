@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include <boost/preprocessor/stringize.hpp>
 
 #include "common/assert.h"
@@ -16,6 +17,7 @@
 #include "core/platform.h"
 #include "video_core/amdgpu/liverpool.h"
 #include "video_core/amdgpu/pm4_cmds.h"
+#include "video_core/amdgpu/scalar_completion.h"
 #include "video_core/renderdoc.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 
@@ -72,8 +74,149 @@ Liverpool::Liverpool() : guest_markers_enabled{EmulatorSettings.IsVkGuestMarkers
 }
 
 Liverpool::~Liverpool() {
+    Stop();
+}
+
+void Liverpool::BindRasterizer(Vulkan::Rasterizer* rasterizer_) {
+    rasterizer = rasterizer_;
+    completion_owner = std::make_shared<CompletionOwner>();
+    completion_owner->target = this;
+    auto owner = completion_owner;
+    auto& scheduler = rasterizer->GetScheduler();
+    completion_lane = std::make_shared<VideoCore::Sync::GuestCompletionLane>(
+        scheduler.TimelineIdentity(),
+        [&scheduler](const auto& ticket, std::stop_token stop) {
+            return scheduler.WaitSubmitted(ticket, stop);
+        },
+        [owner] {
+            std::scoped_lock lock{owner->mutex};
+            if (!owner->target)
+                return;
+            owner->target->SendCommand([owner] {
+                Liverpool* target;
+                {
+                    std::scoped_lock lock{owner->mutex};
+                    target = owner->target;
+                }
+                // Only the CP executes this message. Stop() joins that CP before
+                // dependent targets can be destroyed; no owner lock across IRQs.
+                if (target)
+                    target->DrainCompletions();
+            });
+            // The VO predicate may be false while the label action is CP-ready.
+            if (owner->target->vo_port)
+                owner->target->vo_port->SignalVoLabel();
+        });
+    if (const char* path = std::getenv("SHADPS4_E1_TRACE")) {
+        completion_trace.open(path, std::ios::out | std::ios::trunc);
+        ASSERT_MSG(completion_trace.good(), "Could not open E1 completion trace");
+    }
+}
+
+void Liverpool::StopCompletionLane() {
+    if (completion_stopping.exchange(true))
+        return;
+    if (completion_owner) {
+        std::scoped_lock lock{completion_owner->mutex};
+        completion_owner->target = nullptr; // Reject posts and invalidate CP-ready messages.
+    }
+    if (completion_lane)
+        completion_lane->Stop();
+}
+
+void Liverpool::Stop() {
+    StopCompletionLane();
     process_thread.request_stop();
-    process_thread.join();
+    submit_cv.notify_all();
+    if (vo_port)
+        vo_port->SignalVoLabel();
+    if (process_thread.joinable() && process_thread.get_id() != std::this_thread::get_id())
+        process_thread.join();
+    if (completion_trace.is_open()) {
+        completion_trace << "{\"summary\":true,\"published\":" << completion_count
+                         << ",\"prefix_submits\":" << prefix_count
+                         << ",\"known_empty_prefixes\":" << empty_prefix_count
+                         << ",\"synchronous_proofs\":" << synchronous_count
+                         << ",\"depth_high_water\":" << completion_lane->HighWater() << "}\n";
+        completion_trace.close();
+    }
+}
+
+void Liverpool::QueueScalar(VideoCore::Sync::ScalarCompletion action,
+                            std::optional<VideoCore::Sync::CompletedPrefix> completed) {
+    if (completion_stopping)
+        return;
+    auto& scheduler = rasterizer->GetScheduler();
+    action.empty_prefix = scheduler.IsKnownEmptyPrefix();
+    action.synchronous = completed.has_value() && action.empty_prefix;
+    // An actual Finish proof can be reused only if its fresh suffix stayed empty.
+    auto ticket = action.synchronous ? Vulkan::Scheduler::SubmitResult{completed->Ticket()}
+                                     : scheduler.FlushAndGetSubmittedTickForCurrentPrefix();
+    if (!ticket) {
+        StopCompletionLane();
+        UNREACHABLE_MSG("Guest completion prefix submit failed");
+    }
+    action.submitted_ns = ticket->SubmittedAt();
+    if (action.synchronous)
+        ++synchronous_count;
+    else {
+        ++prefix_count;
+        empty_prefix_count += action.empty_prefix;
+    }
+    if (!(action.synchronous ? completion_lane->Enqueue(*completed, action)
+                             : completion_lane->Enqueue(*ticket, action))) {
+        if (completion_stopping)
+            return;
+        StopCompletionLane();
+        UNREACHABLE_MSG("Guest completion admission failed");
+    }
+}
+
+void Liverpool::DrainCompletions() {
+    if (completion_lane->Failed()) {
+        StopCompletionLane();
+        UNREACHABLE_MSG("Host timeline failed; guest publication cancelled");
+    }
+    completion_lane->Drain([this](const auto& ready) { PublishScalar(ready); });
+}
+
+void Liverpool::PublishScalar(const VideoCore::Sync::GuestCompletionLane::Ready& ready) {
+    using namespace VideoCore::Sync;
+    const auto& action = ready.action;
+    const auto opcode = action.family == ScalarFamily::Eop   ? PM4ItOpcode::EventWriteEop
+                        : action.family == ScalarFamily::Eos ? PM4ItOpcode::EventWriteEos
+                                                             : PM4ItOpcode::ReleaseMem;
+    UmaCensus::OriginScope origin{u64(opcode), action.packet_id};
+    const bool success = action.Publish(
+        [&](uint64_t address, uint64_t value, uint32_t size, bool direct) {
+            const bool stored =
+                Core::Memory::Instance()->TryWriteCompletion(address, value, size, direct);
+            if (stored)
+                rasterizer->Census(UmaCensus::Kind::CpuWrite, address, size, u64(opcode), 0,
+                                   action.packet_id);
+            return stored;
+        },
+        [&](uint32_t irq) {
+            rasterizer->Census(UmaCensus::Kind::Irq, 0, 0, u64(opcode), irq, action.packet_id);
+            Platform::IrqC::Instance()->Signal(static_cast<Platform::InterruptId>(irq));
+        },
+        GetGpuClock64, GetGpuPerfCounter);
+    ASSERT_MSG(success, "Guest completion destination invalid or unsupported: {:#x}",
+               action.address);
+    ++completion_count;
+    if (completion_trace.is_open()) {
+        completion_trace << "{\"family\":" << int(action.family) << ",\"queue\":" << action.queue
+                         << ",\"sequence\":" << ready.sequence
+                         << ",\"tick\":" << ready.ticket.Value()
+                         << ",\"packet\":" << action.packet_id
+                         << ",\"parsed_ns\":" << action.parsed_ns
+                         << ",\"submitted_ns\":" << action.submitted_ns
+                         << ",\"observed_ns\":" << ready.observed_ns
+                         << ",\"ready_ns\":" << ready.ready_ns
+                         << ",\"published_ns\":" << CompletionTime()
+                         << ",\"empty_proxy\":" << action.empty_prefix
+                         << ",\"synchronous\":" << action.synchronous << "}\n";
+    }
 }
 
 void Liverpool::ProcessCommands() {
@@ -111,7 +254,7 @@ void Liverpool::Process(std::stop_token stoken) {
 
         curr_qid = -1;
 
-        while (num_submits || num_commands) {
+        while ((num_submits || num_commands) && !stoken.stop_requested()) {
             ProcessCommands();
 
             curr_qid = (curr_qid + 1) % num_mapped_queues;
@@ -663,6 +806,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::EventWriteEos: {
                 const auto* event_eos = reinterpret_cast<const PM4CmdEventWriteEos*>(header);
+                const auto parsed_ns = VideoCore::Sync::CompletionTime();
                 const auto census_packet = UmaCensus::Enabled() ? UmaCensus::NewId() : 0;
                 UmaCensus::OriginScope census_origin{u64(PM4ItOpcode::EventWriteEos),
                                                      census_packet};
@@ -670,32 +814,35 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                     rasterizer->Census(UmaCensus::Kind::Packet, event_eos->Address<VAddr>(), 4,
                                        u64(PM4ItOpcode::EventWriteEos), event_eos->cmd_info,
                                        census_packet);
-                if (rasterizer) {
-                    rasterizer->OnFence();
-                }
-                event_eos->SignalFence(
-                    [this, census_packet](void* address, u64 data, u32 num_bytes) {
-                        if (rasterizer)
-                            rasterizer->Census(UmaCensus::Kind::CpuWrite,
-                                               reinterpret_cast<VAddr>(address), num_bytes,
-                                               u64(PM4ItOpcode::EventWriteEos), 0, census_packet);
-                        auto* memory = Core::Memory::Instance();
-                        ASSERT(memory->TryWriteBacking(address, &data, num_bytes));
-                    });
-                if (event_eos->command == PM4CmdEventWriteEos::Command::GdsStore) {
+                const auto proof = rasterizer ? rasterizer->OnFence() : std::nullopt;
+                if (event_eos->command == PM4CmdEventWriteEos::Command::SignalFence && rasterizer) {
+                    auto action = OwnScalar(*event_eos);
+                    action.packet_id = census_packet;
+                    action.parsed_ns = parsed_ns;
+                    action.queue = GfxQueueId;
+                    QueueScalar(action, proof);
+                } else if (event_eos->command == PM4CmdEventWriteEos::Command::GdsStore) {
                     ASSERT(event_eos->size == 1);
                     if (rasterizer) {
-                        rasterizer->Finish(7);
+                        const auto completed =
+                            rasterizer->GetScheduler().FinishAndGetCompletedPrefix(7);
+                        completion_lane->CompleteThrough(completed);
+                        DrainCompletions(); // Do not overtake older scalar publications.
                         const u32 value = rasterizer->ReadDataFromGds(event_eos->gds_index);
                         rasterizer->Census(UmaCensus::Kind::CpuWrite, event_eos->Address<VAddr>(),
                                            4, u64(PM4ItOpcode::EventWriteEos), 0, census_packet);
                         *event_eos->Address() = value;
                     }
+                } else {
+                    event_eos->SignalFence([](void* address, u64 data, u32 bytes) {
+                        ASSERT(Core::Memory::Instance()->TryWriteBacking(address, &data, bytes));
+                    });
                 }
                 break;
             }
             case PM4ItOpcode::EventWriteEop: {
                 const auto* event_eop = reinterpret_cast<const PM4CmdEventWriteEop*>(header);
+                const auto parsed_ns = VideoCore::Sync::CompletionTime();
                 const auto census_packet = UmaCensus::Enabled() ? UmaCensus::NewId() : 0;
                 UmaCensus::OriginScope census_origin{u64(PM4ItOpcode::EventWriteEop),
                                                      census_packet};
@@ -707,23 +854,21 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                             : (event_eop->data_sel == DataSelect::None ? 0 : 8),
                         u64(PM4ItOpcode::EventWriteEop), event_eop->data_control, census_packet);
                 if (rasterizer) {
-                    rasterizer->OnFence();
+                    const auto proof = rasterizer->OnFence();
+                    auto action = OwnScalar(*event_eop);
+                    action.packet_id = census_packet;
+                    action.parsed_ns = parsed_ns;
+                    action.queue = GfxQueueId;
+                    action.irq = u32(Platform::InterruptId::GfxEop);
+                    QueueScalar(action, proof);
+                } else {
+                    event_eop->SignalFence(
+                        [](void* address, u64 data, u32 bytes) {
+                            ASSERT(
+                                Core::Memory::Instance()->TryWriteBacking(address, &data, bytes));
+                        },
+                        [] { Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop); });
                 }
-                event_eop->SignalFence(
-                    [this, census_packet](void* address, u64 data, u32 num_bytes) {
-                        if (rasterizer)
-                            rasterizer->Census(UmaCensus::Kind::CpuWrite,
-                                               reinterpret_cast<VAddr>(address), num_bytes,
-                                               u64(PM4ItOpcode::EventWriteEop), 0, census_packet);
-                        auto* memory = Core::Memory::Instance();
-                        ASSERT(memory->TryWriteBacking(address, &data, num_bytes));
-                    },
-                    [this, census_packet] {
-                        if (rasterizer)
-                            rasterizer->Census(UmaCensus::Kind::Irq, 0, 0,
-                                               u64(PM4ItOpcode::EventWriteEop), 0, census_packet);
-                        Platform::IrqC::Instance()->Signal(Platform::InterruptId::GfxEop);
-                    });
                 break;
             }
             case PM4ItOpcode::DmaData: {
@@ -836,7 +981,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 const u64* wait_addr = wait_reg_mem->Address<u64*>();
                 if (vo_port->IsVoLabel(wait_addr) &&
                     num_submits == mapped_queues[GfxQueueId].submits.size()) {
-                    vo_port->WaitVoLabel([&] { return wait_reg_mem->Test(regs.reg_array); });
+                    VideoCore::Sync::WaitWithProgress(
+                        vo_port->vo_mutex, vo_port->vo_cv,
+                        [&] { return wait_reg_mem->Test(regs.reg_array); },
+                        [&] { return num_commands.load() != 0; }, [&] { ProcessCommands(); },
+                        [&] { return process_thread.get_stop_token().stop_requested(); });
                     break;
                 }
                 while (!wait_reg_mem->Test(regs.reg_array)) {
@@ -1161,6 +1310,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
         case PM4ItOpcode::ReleaseMem: {
             const auto* release_mem = reinterpret_cast<const PM4CmdReleaseMem*>(header);
+            const auto parsed_ns = VideoCore::Sync::CompletionTime();
             const auto census_packet = UmaCensus::Enabled() ? UmaCensus::NewId() : 0;
             UmaCensus::OriginScope census_origin{u64(PM4ItOpcode::ReleaseMem), census_packet};
             if (rasterizer)
@@ -1170,23 +1320,30 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
                                    u64(release_mem->data_sel.Value()) |
                                        (u64(release_mem->int_sel.Value()) << 32),
                                    census_packet);
-            if (rasterizer) {
-                rasterizer->OnFence();
+            const auto proof = rasterizer ? rasterizer->OnFence() : std::nullopt;
+            if (rasterizer && release_mem->data_sel != DataSelect::GdsMemStore) {
+                auto action = OwnScalar(*release_mem);
+                action.packet_id = census_packet;
+                action.parsed_ns = parsed_ns;
+                action.queue = vqid + 1;
+                action.irq = queue.pipe_id;
+                QueueScalar(action, proof);
+            } else {
+                // E1C: GDS needs a private prefix-owned snapshot, not a scalar descriptor.
+                release_mem->SignalFence(
+                    [this, census_packet, pipe_id = queue.pipe_id] {
+                        if (rasterizer)
+                            rasterizer->Census(UmaCensus::Kind::Irq, 0, 0,
+                                               u64(PM4ItOpcode::ReleaseMem), pipe_id,
+                                               census_packet);
+                        Platform::IrqC::Instance()->Signal(
+                            static_cast<Platform::InterruptId>(pipe_id));
+                    },
+                    [this](VAddr dst, u16 gds_index, u16 num_dwords) {
+                        rasterizer->CopyBuffer(dst, gds_index, num_dwords * sizeof(u32), false,
+                                               true);
+                    });
             }
-            if (rasterizer && release_mem->data_sel != DataSelect::GdsMemStore)
-                rasterizer->Census(UmaCensus::Kind::CpuWrite, release_mem->Address<VAddr>(),
-                                   release_mem->data_sel == DataSelect::Data32Low ? 4 : 8,
-                                   u64(PM4ItOpcode::ReleaseMem), 0, census_packet);
-            release_mem->SignalFence(
-                [this, census_packet, pipe_id = queue.pipe_id] {
-                    if (rasterizer)
-                        rasterizer->Census(UmaCensus::Kind::Irq, 0, 0, u64(PM4ItOpcode::ReleaseMem),
-                                           pipe_id, census_packet);
-                    Platform::IrqC::Instance()->Signal(static_cast<Platform::InterruptId>(pipe_id));
-                },
-                [this](VAddr dst, u16 gds_index, u16 num_dwords) {
-                    rasterizer->CopyBuffer(dst, gds_index, num_dwords * sizeof(u32), false, true);
-                });
             break;
         }
         case PM4ItOpcode::EventWrite: {

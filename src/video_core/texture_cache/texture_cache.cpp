@@ -70,18 +70,22 @@ TextureCache::TextureCache(const Vulkan::Instance& instance_, Vulkan::Scheduler&
 
 TextureCache::~TextureCache() = default;
 
-void TextureCache::ProcessDownloadImages() {
+std::optional<VideoCore::Sync::CompletedPrefix> TextureCache::ProcessDownloadImages() {
+    std::optional<VideoCore::Sync::CompletedPrefix> completed;
     std::unique_lock lk{download_images_mutex};
     for (const ImageId image_id : download_images) {
-        DownloadImageMemory(image_id, true);
+        if (auto proof = DownloadImageMemory(image_id, true))
+            completed = proof;
     }
     download_images.clear();
+    return completed;
 }
 
-void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
+std::optional<VideoCore::Sync::CompletedPrefix> TextureCache::DownloadImageMemory(ImageId image_id,
+                                                                                bool sync) {
     Image& image = slot_images[image_id];
     if (False(image.flags & ImageFlagBits::GpuModified)) {
-        return;
+        return {};
     }
     const u32 download_size = image.info.pitch * image.info.size.height * image.info.size.depth *
                               image.info.resources.layers * (image.info.num_bits / 8);
@@ -106,11 +110,12 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
     runtime.DownloadImage(&image, download.buffer, std::span{&image_download, 1});
     if (sync) {
         scheduler.Census(UmaCensus::Kind::Readback, image.info.guest_address, download_size, 3);
-        scheduler.Finish(3);
+        const auto completed = scheduler.FinishAndGetCompletedPrefix(3);
         UmaCensus::OriginScope census_origin{3};
         download.Invalidate();
         Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(image.info.guest_address),
                                                   download.mapped, download_size);
+        return completed;
     } else {
         scheduler.DeferPriorityOperation(
             [this, device_addr = image.info.guest_address, download, download_size] {
@@ -120,6 +125,7 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
                 runtime.GetStagingPool().FreeDeferred(download);
             });
     }
+    return {};
 }
 
 void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
