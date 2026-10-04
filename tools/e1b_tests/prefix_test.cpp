@@ -29,4 +29,11 @@ int main() {
   auto ticket = empty.SubmitCurrent(
       1, [](const auto &) {}, [](auto) { return 0; }, [] {});
   assert(ticket);
+  auto failed_proof = empty.ObserveCompletion(*ticket, [](auto) { return -4; });
+  assert(!failed_proof && failed_proof.error() == -4);
+  auto foreign_proof = other.ObserveCompletion(*ticket, [](auto) {
+    assert(false);
+    return 0;
+  });
+  assert(!foreign_proof);
 }

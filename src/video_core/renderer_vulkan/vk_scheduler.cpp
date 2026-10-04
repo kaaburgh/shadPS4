@@ -160,10 +160,16 @@ VideoCore::Sync::CompletedPrefix Scheduler::FinishAndGetCompletedPrefix(uint64_t
     if (!result)
         UNREACHABLE_MSG("Queue submission failed during Finish");
     const auto ticket = *result;
-    auto proof = prefix.ObserveCompletion(ticket, [this](u64 value) {
-        work_semaphore.Wait(value);
+    auto proof = prefix.ObserveCompletion(ticket, [this, &ticket](u64) {
+        // Same existing synchronous Finish point, now with an explicit failure
+        // outcome. Never mint a completed proof after a failed timeline wait.
+        if (WaitSubmitted(ticket, {}) != VideoCore::Sync::WaitStatus::Completed)
+            return -1;
+        work_semaphore.Refresh(); // Preserve the existing known-GPU-tick update.
         return 0;
     });
+    if (!proof)
+        UNREACHABLE_MSG("Host timeline failed during existing Finish");
     Census(UmaCensus::Kind::Finish, 0, 0, caller, 1, ticket.Value());
     return *proof;
 }
