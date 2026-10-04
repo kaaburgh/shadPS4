@@ -99,7 +99,7 @@ struct Options {
     bool allow_cpu = false;
     bool validate = false;
     std::string json_path;
-    uint64_t backing_mib = 512;
+    uint64_t backing_mib = 1024; // sparse memfd; T6 and T6b each reserve up to 256 MiB of PA
     uint64_t arena_mib = 1024;
     std::set<std::string> tests; // empty -> all
     uint32_t t4_iters = 256;

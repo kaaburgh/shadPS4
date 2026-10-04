@@ -49,8 +49,9 @@ status=${PIPESTATUS[0]}
 vstatus=0
 if [ "${E0B_VALIDATE:-0}" = "1" ]; then
     echo "== validation pass"
-    "$probe" --validate --tests caps,t1,t2,t3,t5 --json "$out/probe-validate.json" "$@" \
-        >"$out/probe-validate.log" 2>&1
+    # Short pass: options given on the command line come later and win (--tests adds up).
+    "$probe" --validate --tests caps,t1,t2,t3,t5,t4b,t5b --t4-iters 32 \
+        --json "$out/probe-validate.json" "$@" >"$out/probe-validate.log" 2>&1
     vstatus=$?
     verrors=$(grep -c "validation error" "$out/probe-validate.log")
     echo "validation pass: exit code $vstatus, validation errors $verrors"

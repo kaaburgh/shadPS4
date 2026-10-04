@@ -109,5 +109,6 @@ void InitProbe(Probe& p);
 void CollectEnvironment(Report& r);
 void RunCapabilities(Probe& p);
 void RunFunctional(Probe& p);
+void RunPlanB(Probe& p);
 
 } // namespace e0b

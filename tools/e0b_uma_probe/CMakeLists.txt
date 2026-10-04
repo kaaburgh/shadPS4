@@ -24,6 +24,7 @@ add_executable(e0b_uma_probe
     src/functional.cpp
     src/guest_mem.cpp
     src/main.cpp
+    src/planb.cpp
     src/probe.cpp
     src/report.cpp
     src/vk_ctx.cpp

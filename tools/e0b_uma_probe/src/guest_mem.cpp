@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <fstream>
@@ -95,6 +96,8 @@ uint8_t* GuestMemory::Map(uint64_t va_off, uint64_t pa, uint64_t len) {
     if (p == MAP_FAILED) {
         throw std::runtime_error(Errno("mmap(guest alias)"));
     }
+    Forget(va_off, len);
+    maps_[va_off] = {pa, len};
     return static_cast<uint8_t*>(p);
 }
 
@@ -107,12 +110,73 @@ uint8_t* GuestMemory::MapFd(uint64_t va_off, int fd, uint64_t off, uint64_t len)
     if (p == MAP_FAILED) {
         throw std::runtime_error(Errno("mmap(exported fd at guest va)"));
     }
+    Forget(va_off, len);
+    maps_[va_off] = {kForeign, len};
     return static_cast<uint8_t*>(p);
 }
 
 void GuestMemory::Unmap(uint64_t va_off, uint64_t len) {
     mmap(gva_ + va_off, len, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED | MAP_NORESERVE, -1,
          0);
+    Forget(va_off, len);
+}
+
+void GuestMemory::Forget(uint64_t va_off, uint64_t len) {
+    const uint64_t end = va_off + len;
+    auto it = maps_.upper_bound(va_off);
+    if (it != maps_.begin()) {
+        --it;
+    }
+    while (it != maps_.end() && it->first < end) {
+        const uint64_t s = it->first;
+        const Mapping m = it->second;
+        const uint64_t e = s + m.len;
+        if (e <= va_off) {
+            ++it;
+            continue;
+        }
+        it = maps_.erase(it);
+        if (s < va_off) { // keep the part before the range
+            maps_[s] = {m.pa, va_off - s};
+        }
+        if (e > end) { // keep the part after the range
+            maps_[end] = {m.pa == kForeign ? kForeign : m.pa + (end - s), e - end};
+        }
+    }
+}
+
+bool GuestMemory::Pieces(uint64_t va_off, uint64_t len,
+                         std::vector<std::pair<uint64_t, uint64_t>>* out, std::string* why) const {
+    out->clear();
+    uint64_t va = va_off;
+    const uint64_t end = va_off + len;
+    while (va < end) {
+        auto it = maps_.upper_bound(va);
+        if (it == maps_.begin()) {
+            *why = "guest va " + Hex(va) + " is not mapped";
+            return false;
+        }
+        --it;
+        const uint64_t s = it->first;
+        const Mapping& m = it->second;
+        if (va >= s + m.len) {
+            *why = "guest va " + Hex(va) + " is not mapped";
+            return false;
+        }
+        if (m.pa == kForeign) {
+            *why = "guest va " + Hex(va) + " is not backed by the guest memfd";
+            return false;
+        }
+        const uint64_t pa = m.pa + (va - s);
+        const uint64_t n = std::min(end, s + m.len) - va;
+        if (!out->empty() && out->back().first + out->back().second == pa) {
+            out->back().second += n;
+        } else {
+            out->push_back({pa, n});
+        }
+        va += n;
+    }
+    return true;
 }
 
 DmaBufSource::~DmaBufSource() {

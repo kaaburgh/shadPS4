@@ -112,6 +112,34 @@ Host-pointer import выполняется, только если указате
 `minImportedHostPointerAlignment`. Иначе вариант получает UNSUPPORTED с причиной, и вызов Vulkan
 не делается.
 
+## Plan-B тесты: обычный импортированный VkBuffer (T4b/T5b/T6b)
+
+На RTX 5070 Ti (driver 595.91.07) sparse arena принимает только memory type {1}, а host import
+даёт {2,3}. Поэтому shared-путь там возможен только через **обычный** VkBuffer поверх импорта
+(T1b/T2/T3 `(planB)` проходят). T4b/T5b/T6b проверяют этот путь глубже.
+
+Тесты не зависят от механизма импорта. Они работают через интерфейс `Importer`
+(`src/planb.cpp`): «импортировать то, что сейчас отображено в guest VA `[va, va+len)`».
+Реализаций две:
+- `host` — `VK_EXT_external_memory_host` на guest VA указатель (NVIDIA);
+- `dmabuf` — udmabuf над memfd-кусками, которые отображены по этому VA (берутся из таблицы
+  отображений `GuestMemory`), плюс `VK_EXT_external_memory_dma_buf` (путь для AMD).
+
+Новый механизм добавляется ещё одним `Importer`, логику тестов при этом переписывать не нужно.
+
+| тест | что проверяет | как читать |
+|---|---|---|
+| **T4b** `planb_coherence_stress` | `--t4-iters` случайных циклов на каждый путь (BDA и SSBO): CPU пишет через guest VA → GPU сверяет и пишет через импортированный буфер → CPU сверяет через alias VA и канонический mapping. Без staging-копий и без flush/invalidate | PASS = все mismatch-счётчики и «gpu dwords not checked» равны нулю |
+| **T5b** `planb_remap_identity` | Guest VA отображает backing A → import#1 → GPU читает A и пишет в него → host ждёт timeline и fence → import#1 уничтожается → тот же VA перемапливается на B → import#2 → GPU должен видеть B, ни одного stale dword из A, запись должна попасть в B, а A остаться нетронутым | Каждый шаг пишется в лог (`# T5b ... step N (+µs)`) и в JSON (`lifecycle: ...`) |
+| **T6b** `planb_import_scaling` | N = 1/16/128/1024/2048/4096 импортов по 64 KiB (лимит тот же, что в T6: `T6b.max_objects`). Отдельно: `create_import_*` (буфер + import + bind); `first_submit_wait_after_import_us` (первый submit после импортов, может включать разовую работу по residency); steady state `empty_*` / `tiny_dispatch_*` (медианы после прогрева); `touch_all_*` (по одному dispatch на каждый буфер в одном submit); `destroy_*` | INFO. FAIL только если какой-то буфер не получил запись из touch-all. Упор в лимит ресурсов — INFO, большие N — SKIP |
+
+Проверено на lavapipe с validation layers: 0 ошибок, T4b/T5b PASS для обоих importer'ов, T6b
+INFO. Проведён и негативный контроль: если после remap оставить старый dma-buf import,
+T5b падает по всем проверкам фазы 2 (stale A виден, B не виден). Оговорка: host import в lavapipe
+не pin'ит страницы и читает CPU VA напрямую, поэтому на lavapipe устаревший host import
+«видит» B. Проверить устаревание host import можно только на реальном драйвере. Протокол T5b
+(дождаться GPU → destroy → remap → новый import) — единственный допустимый по спецификации.
+
 ## Ожидания (гипотезы, которые проверяются)
 
 | | RTX 5070 Ti (NVIDIA) | 3300U (RADV) |

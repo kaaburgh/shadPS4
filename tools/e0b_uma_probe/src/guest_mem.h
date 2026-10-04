@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,6 +32,11 @@ public:
     uint8_t* MapFd(uint64_t va_off, int fd, uint64_t off, uint64_t len);
     /// Returns [va_off, va_off+len) to an inaccessible reservation.
     void Unmap(uint64_t va_off, uint64_t len);
+
+    /// Resolves guest [va_off, va_off+len) into the memfd (pa, len) pieces mapped there now,
+    /// merging physically contiguous neighbours. Fails on holes and non-memfd mappings.
+    bool Pieces(uint64_t va_off, uint64_t len, std::vector<std::pair<uint64_t, uint64_t>>* out,
+                std::string* why) const;
 
     uint8_t* Gva(uint64_t va_off) const {
         return gva_ + va_off;
@@ -67,6 +73,15 @@ private:
     uint64_t va_span_ = 0;
     bool sealed_ = false;
     std::string seal_error_;
+
+    // What is mapped in the guest window: va_off -> (pa, len); pa == kForeign for MapFd.
+    static constexpr uint64_t kForeign = ~uint64_t(0);
+    struct Mapping {
+        uint64_t pa;
+        uint64_t len;
+    };
+    std::map<uint64_t, Mapping> maps_;
+    void Forget(uint64_t va_off, uint64_t len);
 };
 
 /// A dma-buf describing guest physical memory. `offset` is where the requested first PA

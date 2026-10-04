@@ -27,12 +27,13 @@ static void Usage() {
         "default\n"
         "  --validate                  enable VK_LAYER_KHRONOS_validation\n"
         "  --json PATH                 JSON report path (default: e0b-<host>-<time>.json)\n"
-        "  --tests LIST                comma list of caps,t1,t2,t3,t4,t5,t6,t7 (default: all)\n"
-        "  --backing-mib N             guest memfd size (default 512)\n"
+        "  --tests LIST                comma list of caps,t1..t7 and plan-B t4b,t5b,t6b\n"
+        "                              (default: all)\n"
+        "  --backing-mib N             guest memfd size (default 1024)\n"
         "  --arena-mib N               sparse arena / guest VA span (default 1024)\n"
-        "  --t4-iters N                coherence stress iterations (default 256)\n"
-        "  --t6-max N                  largest object count in T6 (default 4096)\n"
-        "  --t6-iters N                submits per T6 measurement (default 64)\n"
+        "  --t4-iters N                T4/T4b stress iterations per variant (default 256)\n"
+        "  --t6-max N                  largest object count in T6/T6b (default 4096)\n"
+        "  --t6-iters N                submits per T6/T6b measurement (default 64)\n"
         "  --seed N                    pattern/random seed\n"
         "  --force-type                bind imports even if the memory type is outside the\n"
         "                              arena's memoryTypeBits (invalid usage, diagnosis only)\n"
@@ -192,6 +193,7 @@ int main(int argc, char** argv) {
         try {
             RunCapabilities(probe);
             RunFunctional(probe);
+            RunPlanB(probe);
         } catch (const std::exception& e) {
             report.Add("probe", "setup", Status::Error, e.what());
         }
