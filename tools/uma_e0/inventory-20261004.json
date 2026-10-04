@@ -1,0 +1,66 @@
+[
+  {
+    "path": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-bb-memory-telemetry-window-attribution",
+    "root": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-bb-memory-telemetry-window-attribution",
+    "head": "7e54ebb0a97d1fb05f4c57cfb79f5f1cc2035906",
+    "branch": "diag/bb-memory-telemetry-window-attribution-20260925",
+    "status": "clean",
+    "relation": "90\t4"
+  },
+  {
+    "path": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-bb-post5100-lifecycle",
+    "root": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-bb-post5100-lifecycle",
+    "head": "53729b37c086b9b4d128c6bceaedec076ea158a6",
+    "branch": "diag/bb-post5100-lifecycle-20260925",
+    "status": "clean",
+    "relation": "84\t1"
+  },
+  {
+    "path": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-bb-post5100-memory-telemetry",
+    "root": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-bb-post5100-memory-telemetry",
+    "head": "4b8fb771a6c99907c0f5aff6422770d1b93dca3a",
+    "branch": "diag/bb-post5100-memory-telemetry-20260925",
+    "status": "clean",
+    "relation": "84\t2"
+  },
+  {
+    "path": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-memory-telemetry",
+    "root": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-memory-telemetry",
+    "head": "5f7f1125e4fc34eb39179713ab78960fb7034cfa",
+    "branch": "diag/memory-coherency-traffic-telemetry-20260924",
+    "status": "clean",
+    "relation": "90\t2"
+  },
+  {
+    "path": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-memory-telemetry-bbdiag",
+    "root": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-memory-telemetry-bbdiag",
+    "head": "9fa52daa7fd755142dded708829989c7bf6d67fb",
+    "branch": "diag/memory-telemetry-bbloaddiag-20260925",
+    "status": "clean",
+    "relation": "90\t3"
+  },
+  {
+    "path": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-memory-telemetry-window-attribution",
+    "root": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-memory-telemetry-window-attribution",
+    "head": "b11841e1f6d2771594c79026c9485a51b355907a",
+    "branch": "diag/memory-telemetry-window-attribution-20260925",
+    "status": "clean",
+    "relation": "90\t3"
+  },
+  {
+    "path": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-source",
+    "root": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-source",
+    "head": "b0693d725739ccdaa252f1c6a6653e4c5eed9353",
+    "branch": "bb/bb-thread2-semantic-writer-20260924",
+    "status": "clean",
+    "relation": "139\t36"
+  },
+  {
+    "path": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-uma-test",
+    "root": "/media/ubuntu/UsbSSD447G/shadps4/shadPS4-uma-test",
+    "head": "e35713c7e56e751a01c7d3a6606c3d6c1a65ac5b",
+    "branch": "detached",
+    "status": "clean",
+    "relation": "139\t8"
+  }
+]

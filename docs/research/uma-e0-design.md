@@ -1,0 +1,87 @@
+# E0 runtime census (observation only)
+
+Base: upstream main f73709cada28e77523e37806fee5c454711d24ba, verified with
+`git ls-remote https://github.com/shadps4-emu/shadPS4.git refs/heads/main` on
+2026-10-04. This work is independent of the immutable E0b checkout and of old
+UFFD/coherence patches. No shared backend or guest synchronization changes.
+
+## Questions and facts
+
+Measure successful raw mapping sizes, backing segments/aliases, live mapping
+fragmentation, mapping churn/lifetimes and GPU-touched mappings. Compare mapping
+boundaries with the *runtime* BufferCache block size. Compare raw mappings with
+coalesced import-region candidates; calls are not necessarily future imports.
+Measure recorded buffer ranges, snapshots, shader DMA resident-set candidates,
+recording sessions, real submits and completion observation. Measure packet parse,
+label/store and IRQ times for E1, without delaying them. Report CPU write/read and
+mapping overlap evidence with graded confidence; absence of Disabled-mode RAW
+observations must never establish absence of RAW hazards.
+
+Hooks, verified against this base:
+
+* MemoryManager successful MapMemory/PoolCommit before VMA coalescing: raw call
+  range and clipped physical pieces are facts. UnmapBytesFromEntry and ProtectBytes
+  expose the actual affected subranges. VMA samples after coalescing expose actual
+  region sizes; offline coalescing is a candidate, not an importability proof.
+* BufferCache ObtainBuffer/ObtainBufferForImage and upload-copy construction:
+  recorded intent and record-time snapshot ranges. These are conservative use
+  candidates, not proof of shader execution. SynchronizeDmaBuffers reports the
+  resident set; exact DMA/BDA shader access remains unknown.
+* Scheduler BeginSession and SubmitExecution: capture-local context/session IDs,
+  explicit session membership, NextTick signal value and queue-submit result.
+  CurrentTick remains prospective. Completion observations wait on the existing
+  semaphore only after successful submit, with finite vkWaitSemaphores timeouts;
+  no Scheduler::Wait/Flush/Finish, scheduler lock or added device ordering.
+* Liverpool EOP/EOS/ReleaseMem parsing, actual label writes/interrupt callbacks,
+  WriteData and renderer CPU DmaData fast paths: facts about CP handling times.
+* PageManager raw fault and existing watcher updates, plus BufferCache dirty/read
+  seams: fault size is an upper bound, not decoded instruction width. Watcher
+  counts/transitions are captured under existing locks; raw fault does not read
+  mutable PageState. BufferCache attribution is established only by paired tracker
+  evidence; ambiguous/missing pairing remains uncertain. No additional protection
+  or watchers. Precise download observation precedes the existing Finish.
+
+## Transport and safety
+
+Opt-in environment variable SHADPS4_UMA_E0_CAPTURE selects a new output directory.
+Disabled hooks take one atomic enabled check. Linux fault producers use only
+lock-free atomics, fixed POD stores, clock_gettime and gettid syscall. A bounded
+preallocated MPSC queue has bounded reservation attempts and explicit drop counts.
+No allocation, formatting, I/O, mutex or container growth is added to a fault path.
+The collector does binary I/O and metadata JSON on its own thread, with a file-size
+budget. Fault producers preserve errno. Collector storage survives late faults.
+Timeline observers are per scheduler and stop/join before semaphore destruction.
+Output is bounded; observer backlog may coalesce observations, which remains an
+explicit completion-timestamp upper bound.
+
+## Format, reconstruction, limits
+
+Versioned fixed-width little-endian binary records carry monotonic nanoseconds,
+sequence, thread, event type/flags, context/session/tick, range and three auxiliary
+fields. Metadata records build/source, config/tracking, GPU/driver, OS, game and
+harness inputs, wall-clock start/end and drops. Raw events remain available.
+The offline analyzer reconstructs epochs from successful maps, clips lifetimes on
+unmap/replacement/protection, joins session membership to successful actual submits,
+and indexes completion observations separately. Lost records, missing sessions,
+unsent observations and incomplete tails invalidate exact/negative claims.
+Snapshots cannot be changed by later guest writes. Current mirrored buffers can
+mask future shared-memory hazards. Overlap is a strong proxy/upper bound, not proof
+of actual GPU access; observed completion is later than or equal to GPU completion,
+so an unobserved completion does not prove GPU work is pending. Alias-VA CPU writes
+and exact DMA accesses remain unobservable; backing aliases supply upper bounds.
+No hot-path JSONL. Expected overhead is clock/atomics/POD copy per event plus
+collector bandwidth; measure off/on controls before making performance claims.
+
+## Existing automation
+
+Inventory: tools/uma_e0/inventory-20261004.json. Historical runner:
+/home/ubuntu/bb-shadPS4-correctness-instrumentation/tools/run_bb_death_reload_benchmark.py.
+It requires old emulator-side SHADPS4_BB_DEATH_LOOP/LOAD_DIAG callbacks, so it is not
+valid unchanged against upstream. Reusable independent input/screenshot helper:
+/media/ubuntu/UsbSSD447G/shadps4/work/bb-1.09-exploration/diagnostics/x11_control.py
+and its x11-venv Python. .bbpad replays also require old source support. Do not
+cherry-pick those implementations. Use external X11 input and bounded launches;
+full captures must confirm Central Yharnam/death/reload via operator or screenshots.
+
+Scope corresponds to a fresh BB-INS2 runtime producer experiment; it does not
+promote earlier baseline-bound schemas or historical Bloodborne evidence.
