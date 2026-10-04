@@ -4,11 +4,13 @@
 #pragma once
 
 #include <condition_variable>
+#include <expected>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <queue>
 #include "common/uma_census.h"
+#include "video_core/synchronization/submitted_prefix.h"
 
 #include "common/interval_set.h"
 #include "common/unique_function.h"
@@ -358,6 +360,17 @@ public:
     explicit Scheduler(const Instance& instance);
     ~Scheduler();
 
+    using SubmittedTick = VideoCore::Sync::SubmittedTick;
+    using SubmitResult = std::expected<SubmittedTick, vk::Result>;
+    SubmitResult FlushAndGetSubmittedTickForCurrentPrefix();
+    SubmittedTick FinishAndGetCompletedPrefix(uint64_t caller = 0);
+    const auto& TimelineIdentity() const {
+        return prefix.Identity();
+    }
+    bool IsKnownEmptyPrefix() const {
+        return prefix.KnownEmpty();
+    }
+
     /// Sends the current execution context to the GPU
     /// and increments the scheduler timeline semaphore.
     void Flush(SubmitInfo& info);
@@ -409,7 +422,8 @@ public:
 
     /// Returns the current command buffer.
     vk::CommandBuffer CommandBuffer() const {
-        return sessions.back().primary;
+        prefix.MarkAccessed();
+        return prefix.Sessions().back().primary;
     }
 
     /// Returns the current command buffer tick.
@@ -455,7 +469,7 @@ public:
         return census_context;
     }
     uint64_t CensusSession() const {
-        return sessions.empty() ? 0 : sessions.back().census_id;
+        return prefix.Sessions().empty() ? 0 : prefix.Sessions().back().census_id;
     }
     void Census(UmaCensus::Kind kind, uint64_t addr = 0, uint64_t size = 0, uint64_t a = 0,
                 uint64_t b = 0, uint64_t c = 0, uint32_t flags = 0) const {
@@ -487,7 +501,7 @@ public:
 private:
     void EndSession();
 
-    void SubmitExecution(SubmitInfo& info);
+    SubmitResult SubmitExecution(SubmitInfo& info);
 
     void PriorityPendingOpsThread(std::stop_token stoken);
 
@@ -502,12 +516,7 @@ private:
     uint64_t census_command{};
     uint64_t census_context{};
     std::unique_ptr<UmaTimelineObserver> census_observer;
-    struct Session {
-        uint64_t census_id{};
-        vk::CommandBuffer upload{};
-        vk::CommandBuffer primary{};
-    };
-    std::vector<Session> sessions;
+    VideoCore::Sync::SubmittedPrefix<vk::CommandBuffer> prefix;
     std::condition_variable_any event_cv;
     struct PendingOp {
         Common::UniqueFunction<void> callback;

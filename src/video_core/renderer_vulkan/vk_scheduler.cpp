@@ -99,7 +99,8 @@ void Scheduler::EndRendering() {
 }
 
 vk::CommandBuffer Scheduler::UploadCommandBuffer() {
-    auto& upload_cmdbuf = sessions.back().upload;
+    prefix.MarkAccessed();
+    auto& upload_cmdbuf = prefix.Sessions().back().upload;
     if (upload_cmdbuf) {
         return upload_cmdbuf;
     }
@@ -113,7 +114,8 @@ vk::CommandBuffer Scheduler::UploadCommandBuffer() {
 
 void Scheduler::Flush(SubmitInfo& info) {
     // When flushing, we only send data to the driver; no waiting is necessary.
-    SubmitExecution(info);
+    auto result = SubmitExecution(info);
+    ASSERT_MSG(result.has_value(), "Queue submission failed: {}", vk::to_string(result.error()));
 }
 
 void Scheduler::Flush() {
@@ -121,14 +123,22 @@ void Scheduler::Flush() {
     Flush(info);
 }
 
-void Scheduler::Finish(uint64_t caller) {
-    Census(UmaCensus::Kind::Finish, 0, 0, caller, 0);
-    // When finishing, we need to wait for the submission to have executed on the device.
-    const u64 presubmit_tick = CurrentTick();
+Scheduler::SubmitResult Scheduler::FlushAndGetSubmittedTickForCurrentPrefix() {
     SubmitInfo info{};
-    SubmitExecution(info);
-    Wait(presubmit_tick);
-    Census(UmaCensus::Kind::Finish, 0, 0, caller, 1, presubmit_tick);
+    return SubmitExecution(info);
+}
+void Scheduler::Finish(uint64_t caller) {
+    (void)FinishAndGetCompletedPrefix(caller);
+}
+Scheduler::SubmittedTick Scheduler::FinishAndGetCompletedPrefix(uint64_t caller) {
+    Census(UmaCensus::Kind::Finish, 0, 0, caller, 0);
+    SubmitInfo info{};
+    auto result = SubmitExecution(info);
+    ASSERT_MSG(result.has_value(), "Queue submission failed during Finish");
+    const auto ticket = *result;
+    Wait(ticket.Value());
+    Census(UmaCensus::Kind::Finish, 0, 0, caller, 1, ticket.Value());
+    return ticket;
 }
 
 void Scheduler::Wait(u64 tick) {
@@ -152,7 +162,7 @@ void Scheduler::PopPendingOperations() {
 void Scheduler::BeginSession() {
     EndSession();
 
-    auto& session = sessions.emplace_back();
+    auto& session = prefix.Sessions().emplace_back();
     if (UmaCensus::Enabled()) {
         session.census_id = UmaCensus::NewId();
         Census(UmaCensus::Kind::Session);
@@ -178,7 +188,7 @@ void Scheduler::BeginSession() {
 }
 
 void Scheduler::EndSession() {
-    if (sessions.empty()) {
+    if (prefix.Sessions().empty()) {
         return;
     }
 
@@ -186,7 +196,7 @@ void Scheduler::EndSession() {
         on_session();
     }
 
-    const auto& session = sessions.back();
+    const auto& session = prefix.Sessions().back();
     if (session.upload) {
         Check(session.upload.end());
     }
@@ -195,7 +205,7 @@ void Scheduler::EndSession() {
     Check(session.primary.end());
 }
 
-void Scheduler::SubmitExecution(SubmitInfo& info) {
+Scheduler::SubmitResult Scheduler::SubmitExecution(SubmitInfo& info) {
     std::scoped_lock lk{submit_mutex};
     const u64 signal_value = work_semaphore.NextTick();
     if (UmaCensus::Enabled())
@@ -215,19 +225,6 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
 
     EndSession();
 
-    std::vector<vk::CommandBuffer> cmd_buffers;
-    cmd_buffers.reserve(sessions.size() * 2);
-
-    for (const auto& session : sessions) {
-        UmaCensus::Emit(UmaCensus::Kind::SubmitSession, 0, 0, census_context, session.census_id,
-                        signal_value, bool(session.upload));
-        if (session.upload) {
-            cmd_buffers.push_back(session.upload);
-        }
-        cmd_buffers.push_back(session.primary);
-    }
-    sessions.clear();
-
     const vk::Semaphore timeline = work_semaphore.Handle();
     info.AddSignal(timeline, signal_value);
 
@@ -242,32 +239,44 @@ void Scheduler::SubmitExecution(SubmitInfo& info) {
         .pSignalSemaphoreValues = info.signal_ticks.data(),
     };
 
-    const vk::SubmitInfo submit_info = {
+    vk::SubmitInfo submit_info = {
         .pNext = &timeline_si,
         .waitSemaphoreCount = info.num_wait_semas,
         .pWaitSemaphores = info.wait_semas.data(),
         .pWaitDstStageMask = wait_stage_masks.data(),
-        .commandBufferCount = static_cast<u32>(cmd_buffers.size()),
-        .pCommandBuffers = cmd_buffers.data(),
+        .commandBufferCount = 0,
+        .pCommandBuffers = nullptr,
         .signalSemaphoreCount = info.num_signal_semas,
         .pSignalSemaphores = info.signal_semas.data(),
     };
 
     ImGui::Core::TextureManager::Submit();
-    const auto census_submit_ns = UmaCensus::Enabled() ? UmaCensus::Now() : 0;
-    auto submit_result = instance.GetGraphicsQueue().submit(submit_info, info.fence);
-    UmaCensus::Emit(UmaCensus::Kind::Submit, 0, cmd_buffers.size(), census_context, 0, signal_value,
-                    uint64_t(int64_t(submit_result)), census_submit_ns,
-                    instance.GetGraphicsQueueFamilyIndex());
-    if (census_observer && submit_result == vk::Result::eSuccess)
-        census_observer->Submitted(signal_value);
-    ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
-
-    work_semaphore.Refresh();
-    BeginSession();
-
-    // Apply pending operations
-    PopPendingOperations();
+    const auto result = prefix.SubmitCurrent(
+        signal_value,
+        [&](const auto& session) {
+            UmaCensus::Emit(UmaCensus::Kind::SubmitSession, 0, 0, census_context, session.census_id,
+                            signal_value, bool(session.upload));
+        },
+        [&](std::span<const vk::CommandBuffer> commands) {
+            submit_info.commandBufferCount = static_cast<u32>(commands.size());
+            submit_info.pCommandBuffers = commands.data();
+            const auto submit_ns = UmaCensus::Enabled() ? UmaCensus::Now() : 0;
+            const auto status = instance.GetGraphicsQueue().submit(submit_info, info.fence);
+            UmaCensus::Emit(UmaCensus::Kind::Submit, 0, commands.size(), census_context, 0,
+                            signal_value, uint64_t(int64_t(status)), submit_ns,
+                            instance.GetGraphicsQueueFamilyIndex());
+            if (census_observer && status == vk::Result::eSuccess)
+                census_observer->Submitted(signal_value);
+            return static_cast<int32_t>(status);
+        },
+        [&] {
+            work_semaphore.Refresh();
+            BeginSession();
+            PopPendingOperations();
+        });
+    if (!result)
+        return std::unexpected(static_cast<vk::Result>(result.error()));
+    return *result;
 }
 
 void Scheduler::PriorityPendingOpsThread(std::stop_token stoken) {
