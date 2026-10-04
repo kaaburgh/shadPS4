@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "video_core/amdgpu/scalar_completion.h"
+#include "video_core/synchronization/cp_completion_target.h"
 #include <atomic>
 #include <cassert>
 #include <future>
@@ -216,6 +217,91 @@ int main() {
       release.int_sel.Assign(InterruptSelect::IrqUndocumented);
       assert(OwnScalar(release).family == ScalarFamily::Release);
     }
+  }
+  { // Real production CP delivery token: idle wake, owned mailbox, teardown.
+    struct Cp {
+      int stores{};
+      std::deque<std::function<void()>> messages;
+    } cp;
+    auto delivery = std::make_shared<CpCompletionTarget<Cp>>(&cp);
+    auto post = [](Cp &target, auto message) {
+      target.messages.emplace_back(std::move(message));
+    };
+    auto ready = [](Cp &target) { ++target.stores; };
+    delivery->PostReady(post, ready, [](Cp &) {});
+    assert(cp.stores == 0 && cp.messages.size() == 1);
+    cp.messages.front()();
+    cp.messages.pop_front();
+    assert(cp.stores == 1);
+    delivery->PostReady(post, ready, [](Cp &) {});
+    delivery->Invalidate();
+    cp.messages.front()();
+    cp.messages.pop_front();
+    assert(cp.stores == 1);
+    delivery->PostReady(post, ready, [](Cp &) {});
+    assert(cp.messages.empty());
+  }
+  { // Idle CP consumes the production delivery token without any later submit.
+    struct Cp {
+      std::mutex mutex;
+      std::condition_variable_any cv;
+      std::deque<std::function<void()>> messages;
+      std::atomic<int> published{};
+      GuestCompletionLane *lane{};
+    } cp;
+    SubmittedPrefix<int> prefix;
+    auto ticket =
+        *prefix.SubmitCurrent(1, [](auto &) {}, [](auto) { return 0; }, [] {});
+    std::atomic<bool> complete{};
+    auto delivery = std::make_shared<CpCompletionTarget<Cp>>(&cp);
+    GuestCompletionLane lane(
+        prefix.Identity(),
+        [&](auto &, std::stop_token stop) {
+          while (!stop.stop_requested()) {
+            if (complete)
+              return WaitStatus::Completed;
+            std::this_thread::sleep_for(1ms);
+          }
+          return WaitStatus::Cancelled;
+        },
+        [&] {
+          delivery->PostReady(
+              [](Cp &target, auto message) {
+                std::scoped_lock lock{target.mutex};
+                target.messages.emplace_back(std::move(message));
+                target.cv.notify_one();
+              },
+              [](Cp &target) {
+                target.lane->Drain([&](auto &) { ++target.published; });
+              },
+              [](Cp &) {});
+        });
+    cp.lane = &lane;
+    std::jthread processor([&](std::stop_token stop) {
+      while (!stop.stop_requested()) {
+        std::function<void()> message;
+        {
+          std::unique_lock lock{cp.mutex};
+          cp.cv.wait(lock, stop, [&] { return !cp.messages.empty(); });
+          if (stop.stop_requested())
+            break;
+          message = std::move(cp.messages.front());
+          cp.messages.pop_front();
+        }
+        message();
+      }
+    });
+    assert(lane.Enqueue(ticket, {}));
+    assert(cp.published == 0);
+    complete = true;
+    for (int i = 0; i < 2000 && !cp.published; ++i)
+      std::this_thread::sleep_for(1ms);
+    assert(cp.published == 1);
+    delivery->Invalidate();
+    lane.Stop();
+    processor.request_stop();
+    cp.cv.notify_all();
+    processor.join();
   }
   std::cout << "production completion adapters: PASS\n";
 }

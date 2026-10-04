@@ -4,6 +4,7 @@
 #pragma once
 
 #include <fstream>
+#include "video_core/synchronization/cp_completion_target.h"
 #include "video_core/synchronization/guest_completion.h"
 
 #include <condition_variable>
@@ -199,10 +200,7 @@ private:
                      std::optional<VideoCore::Sync::CompletedPrefix> completed = {});
     void DrainCompletions();
     void PublishScalar(const VideoCore::Sync::GuestCompletionLane::Ready& ready);
-    struct CompletionOwner {
-        std::recursive_mutex mutex;
-        Liverpool* target{};
-    };
+    using CompletionOwner = VideoCore::Sync::CpCompletionTarget<Liverpool>;
     std::shared_ptr<CompletionOwner> completion_owner;
     std::shared_ptr<VideoCore::Sync::GuestCompletionLane> completion_lane;
     std::atomic<bool> completion_stopping{};

@@ -79,8 +79,7 @@ Liverpool::~Liverpool() {
 
 void Liverpool::BindRasterizer(Vulkan::Rasterizer* rasterizer_) {
     rasterizer = rasterizer_;
-    completion_owner = std::make_shared<CompletionOwner>();
-    completion_owner->target = this;
+    completion_owner = std::make_shared<CompletionOwner>(this);
     auto owner = completion_owner;
     auto& scheduler = rasterizer->GetScheduler();
     completion_lane = std::make_shared<VideoCore::Sync::GuestCompletionLane>(
@@ -89,23 +88,13 @@ void Liverpool::BindRasterizer(Vulkan::Rasterizer* rasterizer_) {
             return scheduler.WaitSubmitted(ticket, stop);
         },
         [owner] {
-            std::scoped_lock lock{owner->mutex};
-            if (!owner->target)
-                return;
-            owner->target->SendCommand([owner] {
-                Liverpool* target;
-                {
-                    std::scoped_lock lock{owner->mutex};
-                    target = owner->target;
-                }
-                // Only the CP executes this message. Stop() joins that CP before
-                // dependent targets can be destroyed; no owner lock across IRQs.
-                if (target)
-                    target->DrainCompletions();
-            });
-            // The VO predicate may be false while the label action is CP-ready.
-            if (auto* port = owner->target->completion_vo_port.load())
-                port->SignalVoLabel();
+            owner->PostReady(
+                [](Liverpool& cp, auto message) { cp.SendCommand(std::move(message)); },
+                [](Liverpool& cp) { cp.DrainCompletions(); },
+                [](Liverpool& cp) {
+                    if (auto* port = cp.completion_vo_port.load())
+                        port->SignalVoLabel();
+                });
         });
     if (const char* path = std::getenv("SHADPS4_E1_TRACE")) {
         completion_trace.open(path, std::ios::out | std::ios::trunc);
@@ -116,10 +105,8 @@ void Liverpool::BindRasterizer(Vulkan::Rasterizer* rasterizer_) {
 void Liverpool::StopCompletionLane() {
     std::call_once(completion_stop_once, [this] {
         completion_stopping = true;
-        if (completion_owner) {
-            std::scoped_lock lock{completion_owner->mutex};
-            completion_owner->target = nullptr;
-        }
+        if (completion_owner)
+            completion_owner->Invalidate();
         if (completion_lane)
             completion_lane->Stop();
     });
