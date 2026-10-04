@@ -10,6 +10,7 @@
 #include <thread>
 #include <queue>
 #include "common/uma_census.h"
+#include "video_core/synchronization/guest_completion.h"
 #include "video_core/synchronization/submitted_prefix.h"
 
 #include "common/interval_set.h"
@@ -363,7 +364,8 @@ public:
     using SubmittedTick = VideoCore::Sync::SubmittedTick;
     using SubmitResult = std::expected<SubmittedTick, vk::Result>;
     SubmitResult FlushAndGetSubmittedTickForCurrentPrefix();
-    SubmittedTick FinishAndGetCompletedPrefix(uint64_t caller = 0);
+    VideoCore::Sync::WaitStatus WaitSubmitted(const SubmittedTick& ticket, std::stop_token stop);
+    VideoCore::Sync::CompletedPrefix FinishAndGetCompletedPrefix(uint64_t caller = 0);
     const auto& TimelineIdentity() const {
         return prefix.Identity();
     }

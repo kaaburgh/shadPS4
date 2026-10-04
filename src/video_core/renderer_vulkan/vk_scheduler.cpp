@@ -115,7 +115,8 @@ vk::CommandBuffer Scheduler::UploadCommandBuffer() {
 void Scheduler::Flush(SubmitInfo& info) {
     // When flushing, we only send data to the driver; no waiting is necessary.
     auto result = SubmitExecution(info);
-    ASSERT_MSG(result.has_value(), "Queue submission failed: {}", vk::to_string(result.error()));
+    if (!result)
+        UNREACHABLE_MSG("Queue submission failed: {}", vk::to_string(result.error()));
 }
 
 void Scheduler::Flush() {
@@ -127,18 +128,44 @@ Scheduler::SubmitResult Scheduler::FlushAndGetSubmittedTickForCurrentPrefix() {
     SubmitInfo info{};
     return SubmitExecution(info);
 }
+VideoCore::Sync::WaitStatus Scheduler::WaitSubmitted(const SubmittedTick& ticket,
+                                                     std::stop_token stop) {
+    using VideoCore::Sync::WaitStatus;
+    if (!ticket.BelongsTo(prefix.Identity()))
+        return WaitStatus::Failed;
+    const auto semaphore = work_semaphore.Handle();
+    const auto value = ticket.Value();
+    const vk::SemaphoreWaitInfo info{
+        .semaphoreCount = 1, .pSemaphores = &semaphore, .pValues = &value};
+    while (!stop.stop_requested()) {
+        const auto result = instance.GetDevice().waitSemaphores(&info, 50'000'000);
+        if (result == vk::Result::eSuccess)
+            return WaitStatus::Completed;
+        if (result != vk::Result::eTimeout) {
+            LOG_CRITICAL(Render_Vulkan, "Guest completion timeline wait failed: {}",
+                         vk::to_string(result));
+            return WaitStatus::Failed;
+        }
+    }
+    return WaitStatus::Cancelled;
+}
+
 void Scheduler::Finish(uint64_t caller) {
     (void)FinishAndGetCompletedPrefix(caller);
 }
-Scheduler::SubmittedTick Scheduler::FinishAndGetCompletedPrefix(uint64_t caller) {
+VideoCore::Sync::CompletedPrefix Scheduler::FinishAndGetCompletedPrefix(uint64_t caller) {
     Census(UmaCensus::Kind::Finish, 0, 0, caller, 0);
     SubmitInfo info{};
     auto result = SubmitExecution(info);
-    ASSERT_MSG(result.has_value(), "Queue submission failed during Finish");
+    if (!result)
+        UNREACHABLE_MSG("Queue submission failed during Finish");
     const auto ticket = *result;
-    Wait(ticket.Value());
+    auto proof = prefix.ObserveCompletion(ticket, [this](u64 value) {
+        work_semaphore.Wait(value);
+        return 0;
+    });
     Census(UmaCensus::Kind::Finish, 0, 0, caller, 1, ticket.Value());
-    return ticket;
+    return *proof;
 }
 
 void Scheduler::Wait(u64 tick) {
