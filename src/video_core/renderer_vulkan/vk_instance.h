@@ -316,6 +316,16 @@ public:
         return properties.pipelineCacheUUID;
     }
 
+    /// Returns the maximum size of a single buffer
+    vk::DeviceSize MaxBufferSize() const {
+        return vk13_props.maxBufferSize;
+    }
+
+    /// Returns the total virtual address space available for sparse resources
+    vk::DeviceSize SparseAddressSpaceSize() const {
+        return properties.limits.sparseAddressSpaceSize;
+    }
+
     /// Returns the minimum required alignment for uniforms
     vk::DeviceSize UniformMinAlignment() const {
         return properties.limits.minUniformBufferOffsetAlignment;
