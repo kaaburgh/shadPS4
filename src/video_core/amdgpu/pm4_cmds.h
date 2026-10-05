@@ -504,6 +504,11 @@ struct PM4CmdEventWriteEop {
             signal_irq();
             break;
         }
+        case InterruptSelect::IrqUndocumented: {
+            // INT_SEL=3 (SEND_DATA_AFTER_WR_CONFIRM): the data is written after
+            // write confirmation (done above) and no interrupt is sent.
+            break;
+        }
         default: {
             UNREACHABLE();
         }
