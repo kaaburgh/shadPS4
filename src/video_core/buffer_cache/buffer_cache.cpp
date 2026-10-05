@@ -55,10 +55,27 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
       stream_buffer{instance, scheduler, MemoryType::Stream, STREAM_BUFFER_SIZE},
       gds_buffer{instance, 0, GDS_BUFFER_SIZE, MemoryType::Stream, "GDS Buffer"},
       memory_semaphore{instance} {
+    // Each arena is a sparse buffer, so its size must not exceed maxBufferSize and must fit in
+    // the device's sparse address space. Keep 4 GiB arenas where the device allows them and
+    // otherwise use the largest power of two that fits, leaving room for two arenas (a request
+    // may span an arena boundary). For example, lavapipe reports maxBufferSize = 4 GiB - 1 and
+    // sparseAddressSpaceSize = 2 GiB, so it gets 1 GiB arenas.
+    const u64 arena_limit =
+        std::min<u64>(instance.MaxBufferSize(), instance.SparseAddressSpaceSize() / 2);
+    arena_page_bits = std::clamp<u64>(std::bit_width(arena_limit) - 1, MIN_ARENA_PAGE_BITS,
+                                      MAX_ARENA_PAGE_BITS);
+    arena_page_size = u64{1} << arena_page_bits;
+    address_space.resize(u64{1} << (ADDRESS_SPACE_BITS - arena_page_bits));
+    if (arena_page_bits < MAX_ARENA_PAGE_BITS) {
+        LOG_INFO(Render, "Using {:#x}-byte sparse buffer arenas (maxBufferSize {:#x}, "
+                         "sparseAddressSpaceSize {:#x})",
+                 arena_page_size, instance.MaxBufferSize(), instance.SparseAddressSpaceSize());
+    }
+
     const vk::BufferCreateInfo probe_ci = {
         .flags =
             vk::BufferCreateFlagBits::eSparseBinding | vk::BufferCreateFlagBits::eSparseResidency,
-        .size = ARENA_PAGE_SIZE,
+        .size = arena_page_size,
         .usage = ARENA_USAGE,
         .sharingMode = vk::SharingMode::eExclusive,
     };
@@ -79,17 +96,17 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
         UmaCensus::Metadata("directMemoryAccess",
                             EmulatorSettings.IsDirectMemoryAccessEnabled() ? "true" : "false");
     }
-    blocks_per_arena_page = ARENA_PAGE_SIZE / block_size;
-    blocks_per_arena_page_shift = ARENA_PAGE_BITS - block_shift;
+    blocks_per_arena_page = arena_page_size / block_size;
+    blocks_per_arena_page_shift = arena_page_bits - block_shift;
     arena_memory_type_index =
         FindMemoryType(instance.GetMemoryProperties(), vk::MemoryPropertyFlagBits::eDeviceLocal,
                        reqs.memoryTypeBits)
             .value();
 
     const u64 bda_pagetable_size =
-        (blocks_per_arena_page * NUM_ARENA_PAGES) * sizeof(vk::DeviceAddress);
+        (blocks_per_arena_page * address_space.size()) * sizeof(vk::DeviceAddress);
     fault_manager = std::make_unique<FaultManager>(instance, scheduler, *this, block_shift,
-                                                   blocks_per_arena_page * NUM_ARENA_PAGES);
+                                                   blocks_per_arena_page * address_space.size());
     bda_pagetable_buffer = std::make_unique<Buffer>(
         instance, 0, bda_pagetable_size, MemoryType::DeviceLocal, "BDA Page Table Buffer");
     runtime.FillBuffer(bda_pagetable_buffer.get(), 0u, bda_pagetable_size, 0u);
@@ -230,7 +247,7 @@ void BufferCache::SynchronizeDmaBuffers() {
     scheduler.Census(UmaCensus::Kind::DmaSet, 0, 0, 3);
     fault_process_pending = true;
     for (const auto& range : resident_ranges) {
-        const u64 page = range.start >> (ARENA_PAGE_BITS - block_shift);
+        const u64 page = range.start >> (arena_page_bits - block_shift);
         const VAddr device_addr = range.start << block_shift;
         const u64 size = (range.end - range.start) << block_shift;
         scheduler.Census(UmaCensus::Kind::DmaRange, device_addr, size, 3);
@@ -252,7 +269,7 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
             const u64 num_pages = last_page - first_page + 1;
             const auto* new_arena =
                 &arenas.emplace_back(instance, base_block << block_shift,
-                                     num_pages << ARENA_PAGE_BITS, MemoryType::Sparse);
+                                     num_pages << arena_page_bits, MemoryType::Sparse);
             address_space[first_page] = new_arena;
             address_space[last_page] = new_arena;
         }
@@ -261,9 +278,9 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
 
     LOG_WARNING(Render, "Migrating arena");
 
-    const u64 first_addr = first_arena ? first_arena->cpu_addr : (first_page << ARENA_PAGE_BITS);
-    const u64 first_size = first_arena ? first_arena->size_bytes : ARENA_PAGE_SIZE;
-    const u64 last_size = last_arena ? last_arena->size_bytes : ARENA_PAGE_SIZE;
+    const u64 first_addr = first_arena ? first_arena->cpu_addr : (first_page << arena_page_bits);
+    const u64 first_size = first_arena ? first_arena->size_bytes : arena_page_size;
+    const u64 last_size = last_arena ? last_arena->size_bytes : arena_page_size;
 
     const u64 base_block = first_addr >> block_shift;
     const u64 total_size = first_size + last_size;
@@ -281,12 +298,12 @@ const Buffer* BufferCache::GetArena(u64 first_block, u64 last_block) {
         });
     });
 
-    u64 base_page = first_addr >> ARENA_PAGE_BITS;
-    for (u32 page = 0; page < (first_size >> ARENA_PAGE_BITS); ++page) {
+    u64 base_page = first_addr >> arena_page_bits;
+    for (u32 page = 0; page < (first_size >> arena_page_bits); ++page) {
         address_space[base_page + page] = new_arena;
     }
     base_page = last_page;
-    for (u32 page = 0; page < (last_size >> ARENA_PAGE_BITS); ++page) {
+    for (u32 page = 0; page < (last_size >> arena_page_bits); ++page) {
         address_space[base_page + page] = new_arena;
     }
     return new_arena;
