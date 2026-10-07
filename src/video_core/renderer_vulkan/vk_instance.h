@@ -371,6 +371,16 @@ public:
         return vk11_props.maxMemoryAllocationSize;
     }
 
+    /// Returns true when host memory can be imported with VK_EXT_external_memory_host
+    bool IsExternalMemoryHostSupported() const {
+        return external_memory_host;
+    }
+
+    /// Returns the required alignment of imported host pointers and sizes
+    vk::DeviceSize MinImportedHostPointerAlignment() const {
+        return min_imported_host_pointer_alignment;
+    }
+
     /// Returns the vulkan 1.2 physical device properties.
     const vk::PhysicalDeviceVulkan12Properties& GetVk12Properties() const noexcept {
         return vk12_props;
@@ -544,6 +554,8 @@ private:
     bool image_view_min_lod{};
     bool shader_clock{};
     bool supports_memory_budget{};
+    bool external_memory_host{};
+    vk::DeviceSize min_imported_host_pointer_alignment{};
     bool supports_block_texel_view{};
     u64 total_memory_budget{};
     std::vector<size_t> valid_heaps;

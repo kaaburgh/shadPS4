@@ -186,6 +186,26 @@ void MemoryManager::CopySparseMemory(VAddr virtual_addr, u8* dest, u64 size) {
     }
 }
 
+std::optional<PAddr> MemoryManager::GetContiguousBacking(VAddr virtual_addr, u64 size) const {
+    if (size == 0 || virtual_addr > UINT64_MAX - size) {
+        return std::nullopt;
+    }
+    const auto& backing_pages = impl.BackingPages();
+    const u64 first_page = virtual_addr >> 14;
+    const u64 last_page = (virtual_addr + size - 1) >> 14;
+    const auto* first = backing_pages.find(first_page);
+    if (!first || !*first) {
+        return std::nullopt;
+    }
+    for (u64 page = first_page + 1; page <= last_page; ++page) {
+        const auto* entry = backing_pages.find(page);
+        if (!entry || *entry != *first + ((page - first_page) << 14)) {
+            return std::nullopt;
+        }
+    }
+    return static_cast<PAddr>(*first - impl.BackingBase()) + virtual_addr % 16_KB;
+}
+
 bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
     const VAddr virtual_addr = std::bit_cast<VAddr>(address);
     std::shared_lock lk{mutex};
