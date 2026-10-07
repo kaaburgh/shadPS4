@@ -59,10 +59,12 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     // Each arena is a sparse buffer, so its size must not exceed maxBufferSize and must fit in
     // the device's sparse address space. Keep 4 GiB arenas where the device allows them and
     // otherwise use the largest power of two that fits, leaving room for two arenas (a request
-    // may span an arena boundary). For example, lavapipe reports maxBufferSize = 4 GiB - 1 and
+    // may span an arena boundary). maxBufferSize is rounded up to whole MiB because drivers
+    // report "4 GiB minus a few bytes" (RADV 0xFFFFFFFC, lavapipe 0xFFFFFFFF); 2 GiB arenas
+    // there would break GetArena's two-page limit for requests above 2 GiB. lavapipe reports
     // sparseAddressSpaceSize = 2 GiB, so it gets 1 GiB arenas.
-    const u64 arena_limit =
-        std::min<u64>(instance.MaxBufferSize(), instance.SparseAddressSpaceSize() / 2);
+    const u64 arena_limit = std::min<u64>(Common::AlignUp(instance.MaxBufferSize(), 1_MB),
+                                          instance.SparseAddressSpaceSize() / 2);
     arena_page_bits =
         std::clamp<u64>(std::bit_width(arena_limit) - 1, MIN_ARENA_PAGE_BITS, MAX_ARENA_PAGE_BITS);
     arena_page_size = u64{1} << arena_page_bits;
@@ -477,26 +479,23 @@ bool BufferCache::IsRegionShared(VAddr addr, u64 size) const {
     return shared_backing->IsEnabled() && shared_ranges.Intersects(addr, size);
 }
 
-std::optional<std::pair<const Buffer*, u64>> BufferCache::ObtainSharedBuffer(VAddr device_addr,
-                                                                             u64 size,
-                                                                             bool is_texel_read) {
-    // Shared state is kept per block, the granularity of the BDA page table, so that buffer
-    // descriptors and DMA accesses of one block always see the same memory.
-    const VAddr block_start = Common::AlignDown(device_addr, block_size);
-    const VAddr block_end = Common::AlignUp(device_addr + size, block_size);
-    const u64 first_block = block_start >> block_shift;
-    const u64 end_block = block_end >> block_shift;
+bool BufferCache::IsRegionSharedOrShareable(VAddr addr, u64 size) {
+    if (!shared_backing->IsEnabled()) {
+        return false;
+    }
+    return shared_ranges.Intersects(addr, size) ||
+           LookupSharedBlocks(Common::AlignDown(addr, block_size),
+                              Common::AlignUp(addr + size, block_size));
+}
+
+std::optional<std::pair<Buffer*, u64>> BufferCache::LookupSharedBlocks(VAddr block_start,
+                                                                       VAddr block_end) {
     bool has_mirror = false;
-    resident_ranges.ForEachInRange(first_block, end_block,
+    resident_ranges.ForEachInRange(block_start >> block_shift, block_end >> block_shift,
                                    [&has_mirror](const Backing&) { has_mirror = true; });
     if (has_mirror) {
-        // A block that already has arena memory stays mirrored until the guest unmaps it.
-        return std::nullopt;
-    }
-    if (is_texel_read && (texture_cache.IsMeta(device_addr) ||
-                          texture_cache.FindImageFromRange(device_addr, size))) {
-        // Reading an image as a texel buffer copies the image into the buffer. Keep that in
-        // the mirror instead of overwriting guest memory.
+        // A block that has arena memory stays mirrored for the rest of the session:
+        // resident_ranges never shrinks.
         return std::nullopt;
     }
     const u64 block_bytes = block_end - block_start;
@@ -504,11 +503,28 @@ std::optional<std::pair<const Buffer*, u64>> BufferCache::ObtainSharedBuffer(VAd
     if (!phys_addr) {
         return std::nullopt;
     }
-    const auto shared = shared_backing->Lookup(*phys_addr, block_bytes);
+    return shared_backing->Lookup(*phys_addr, block_bytes);
+}
+
+std::optional<std::pair<const Buffer*, u64>> BufferCache::ObtainSharedBuffer(VAddr device_addr,
+                                                                             u64 size,
+                                                                             bool is_texel_read) {
+    if (is_texel_read && (texture_cache.IsMeta(device_addr) ||
+                          texture_cache.FindImageFromRange(device_addr, size))) {
+        // Reading an image as a texel buffer copies the image into the buffer. Keep that in
+        // the mirror instead of overwriting guest memory.
+        return std::nullopt;
+    }
+    // Shared state is kept per block, the granularity of the BDA page table, so that buffer
+    // descriptors and DMA accesses of one block always see the same memory.
+    const VAddr block_start = Common::AlignDown(device_addr, block_size);
+    const VAddr block_end = Common::AlignUp(device_addr + size, block_size);
+    const auto shared = LookupSharedBlocks(block_start, block_end);
     if (!shared) {
         return std::nullopt;
     }
     const auto [buffer, block_offset] = *shared;
+    const u64 block_bytes = block_end - block_start;
     if (!shared_ranges.Contains(block_start, block_bytes)) {
         MapSharedBlocks(block_start, block_end, buffer->BufferDeviceAddress() + block_offset);
     }
@@ -545,7 +561,9 @@ void BufferCache::UnmapMemory(VAddr device_addr, u64 size) {
     if (!shared_backing->IsEnabled() || size == 0) {
         return;
     }
-    liverpool->SendCommand<true>([this, device_addr, size] {
+    // The guest does not wait: the CP runs commands before it parses the next packet, so the
+    // reset lands before any work submitted after the unmap is recorded.
+    liverpool->SendCommand([this, device_addr, size] {
         // The next use of an unmapped block resolves its guest memory again, so a remap to
         // other physical memory is seen.
         const VAddr block_start = Common::AlignDown(device_addr, block_size);

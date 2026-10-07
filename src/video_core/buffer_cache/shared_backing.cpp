@@ -116,14 +116,26 @@ SharedBacking::Chunk* SharedBacking::GetChunk(u64 index) {
                               .pCreateInfo = &buffer_ci,
                           })
                           .memoryRequirements;
-    const u32 type_bits = host_props.memoryTypeBits & reqs.memoryTypeBits;
+    // The host reads and writes the backing through its own mapping without flush or
+    // invalidate, so the import must use a host-coherent type.
+    constexpr auto RequiredFlags =
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent;
+    const auto& memory_types = instance.GetMemoryProperties().memoryTypes;
+    u32 type_bits = host_props.memoryTypeBits & reqs.memoryTypeBits;
+    for (u32 bits = type_bits; bits != 0; bits &= bits - 1) {
+        const u32 type = std::countr_zero(bits);
+        if ((memory_types[type].propertyFlags & RequiredFlags) != RequiredFlags) {
+            type_bits &= ~(1U << type);
+        }
+    }
     if (type_bits == 0) {
         LOG_ERROR(Render_Vulkan,
-                  "UMA shared backing: no memory type for imported buffers (host {:#x}, buffer "
-                  "{:#x})",
+                  "UMA shared backing: no host-coherent memory type for imported buffers (host "
+                  "{:#x}, buffer {:#x})",
                   host_props.memoryTypeBits, reqs.memoryTypeBits);
         return nullptr;
     }
+    const u32 memory_type = std::countr_zero(type_bits);
 
     const vk::ImportMemoryHostPointerInfoEXT import_info = {
         .handleType = HostHandleType,
@@ -136,7 +148,7 @@ SharedBacking::Chunk* SharedBacking::GetChunk(u64 index) {
     const vk::MemoryAllocateInfo alloc_info = {
         .pNext = &flags_info,
         .allocationSize = size,
-        .memoryTypeIndex = static_cast<u32>(std::countr_zero(type_bits)),
+        .memoryTypeIndex = memory_type,
     };
     const auto [alloc_result, memory] = device.allocateMemory(alloc_info);
     if (alloc_result != vk::Result::eSuccess) {
@@ -148,8 +160,10 @@ SharedBacking::Chunk* SharedBacking::GetChunk(u64 index) {
     chunk.buffer = std::make_unique<Buffer>(instance, base, size, memory,
                                             fmt::format("Shared backing {:#x}", base));
     chunk.failed = false;
-    LOG_INFO(Render_Vulkan, "UMA shared backing: imported physical {:#x}..{:#x}", base,
-             base + size);
+    LOG_INFO(Render_Vulkan,
+             "UMA shared backing: imported physical {:#x}..{:#x} as memory type {} (host types "
+             "{:#x}, buffer types {:#x})",
+             base, base + size, memory_type, host_props.memoryTypeBits, reqs.memoryTypeBits);
     return &chunk;
 }
 

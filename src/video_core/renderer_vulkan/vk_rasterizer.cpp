@@ -402,8 +402,10 @@ void Rasterizer::Finish(uint64_t caller) {
 
 void Rasterizer::FlushForMemoryWait() {
     // With shared backing a shader writes guest memory directly, so a CP wait on such a
-    // value can only be satisfied once the recorded work is submitted.
-    if (buffer_cache.IsSharedBackingEnabled()) {
+    // value can only be satisfied once the recorded work is submitted. The CP calls this on
+    // every poll: the producer may be recorded by another queue while this one yields, so
+    // submit whenever something was recorded since the last submit.
+    if (buffer_cache.IsSharedBackingEnabled() && !scheduler.IsKnownEmptyPrefix()) {
         scheduler.Flush();
     }
 }
@@ -1180,9 +1182,10 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
                "FillBuffer address and size must be a multiple of 4 bytes");
     if (!is_gds) {
         texture_cache.ClearMeta(address);
-        // Shared regions may be in use by recorded work, so fill them on the GPU timeline.
+        // Shared or shareable regions may be in use by recorded work, also through another
+        // guest VA, so fill them on the GPU timeline.
         if (!buffer_cache.IsRegionGpuModified(address, num_bytes) &&
-            !buffer_cache.IsRegionShared(address, num_bytes)) {
+            !buffer_cache.IsRegionSharedOrShareable(address, num_bytes)) {
             u32* buffer = std::bit_cast<u32*>(address);
             scheduler.Census(UmaCensus::Kind::CpuWrite, address, num_bytes, 5);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);
@@ -1201,9 +1204,9 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
     Scheduler::CensusCommandScope census_command{scheduler, 6};
     if (!dst_gds && !buffer_cache.IsRegionGpuModified(dst, num_bytes) &&
-        !buffer_cache.IsRegionShared(dst, num_bytes)) {
+        !buffer_cache.IsRegionSharedOrShareable(dst, num_bytes)) {
         if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
-            !buffer_cache.IsRegionShared(src, num_bytes) &&
+            !buffer_cache.IsRegionSharedOrShareable(src, num_bytes) &&
             !texture_cache.FindImageFromRange(src, num_bytes)) {
             // Both buffers were not transferred to GPU yet. Can safely copy in host memory.
             scheduler.Census(UmaCensus::Kind::CpuWrite, dst, num_bytes, 6, src);
