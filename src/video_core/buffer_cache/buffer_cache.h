@@ -33,6 +33,7 @@ namespace VideoCore {
 class TextureCache;
 class MemoryTracker;
 class PageManager;
+class SharedBacking;
 
 class BufferCache {
     static constexpr u64 ADDRESS_SPACE_BITS = 40;
@@ -80,6 +81,18 @@ public:
     /// Flushes any GPU modified buffer in the logical page range back to CPU memory.
     void ReadMemory(VAddr device_addr, u64 size, bool is_write = false, bool assume_locks = false);
 
+    /// Forgets which guest memory backs the shared blocks of an unmapped range.
+    void UnmapMemory(VAddr device_addr, u64 size);
+
+    /// Returns true when part of a region is currently served from the shared backing.
+    [[nodiscard]] bool IsRegionShared(VAddr addr, u64 size) const;
+
+    /// Returns true when buffers may be served from the guest physical backing (UMA E3).
+    [[nodiscard]] bool IsSharedBackingEnabled() const noexcept;
+
+    /// Makes device writes to the shared backing visible to the host at the end of a submit.
+    void RecordSharedBackingVisibility();
+
     /// Finds a buffer for the specified region.
     [[nodiscard]] std::pair<const Buffer*, u64> ObtainBuffer(VAddr device_addr, u32 size,
                                                              bool is_written,
@@ -123,7 +136,21 @@ private:
     bool SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 size, bool is_written,
                            bool is_texel_buffer);
 
-    bool SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_addr, u32 size);
+    bool SynchronizeMemoryFromImage(const Buffer* buffer, u64 buffer_offset, VAddr device_addr,
+                                    u32 size);
+
+    /// Serves a range from the guest physical backing when every block it touches can be.
+    std::optional<std::pair<const Buffer*, u64>> ObtainSharedBuffer(VAddr device_addr, u64 size,
+                                                                    bool is_texel_read);
+
+    /// Points the BDA page table entries of [block_start, block_end) at the shared backing.
+    void MapSharedBlocks(VAddr block_start, VAddr block_end, vk::DeviceAddress device_addr);
+
+    /// Moves shared blocks in [block_start, block_end) back to the mirror.
+    void DemoteSharedBlocks(VAddr block_start, VAddr block_end);
+
+    /// Writes one BDA page table entry per block, starting at first_block.
+    void WriteBdaEntries(u64 first_block, std::span<const vk::DeviceAddress> entries);
 
     const Vulkan::Instance& instance;
     Vulkan::Scheduler& scheduler;
@@ -137,6 +164,10 @@ private:
     StreamBuffer stream_buffer;
     Buffer gds_buffer;
     RangeSet gpu_modified_ranges;
+
+    std::unique_ptr<SharedBacking> shared_backing;
+    RangeSet shared_ranges;
+    bool shared_backing_used{};
 
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;

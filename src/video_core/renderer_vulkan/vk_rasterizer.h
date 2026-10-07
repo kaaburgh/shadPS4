@@ -81,6 +81,7 @@ public:
 
     u64 Flush();
     void Finish(uint64_t caller = 1);
+    void FlushForMemoryWait();
     void Census(UmaCensus::Kind kind, uint64_t addr = 0, uint64_t size = 0, uint64_t a = 0,
                 uint64_t b = 0, uint64_t c = 0) {
         scheduler.Census(kind, addr, size, a, b, c);

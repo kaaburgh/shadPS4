@@ -151,6 +151,29 @@ Buffer::Buffer(const Vulkan::Instance& instance, VAddr cpu_addr_, u64 size_bytes
     }
 }
 
+Buffer::Buffer(const Vulkan::Instance& instance, VAddr cpu_addr_, u64 size_bytes_,
+               vk::DeviceMemory imported_memory, std::string_view debug_name)
+    : cpu_addr{cpu_addr_}, size_bytes{size_bytes_}, is_coherent{true},
+      mem_type{MemoryType::DeviceLocal}, buffer{instance.GetDevice(), instance.GetAllocator()} {
+    const auto device = instance.GetDevice();
+    const vk::ExternalMemoryBufferCreateInfo external_ci = {
+        .handleTypes = vk::ExternalMemoryHandleTypeFlagBits::eHostAllocationEXT,
+    };
+    const vk::BufferCreateInfo buffer_ci = {
+        .pNext = &external_ci,
+        .size = size_bytes,
+        .usage = AllFlags,
+        .sharingMode = vk::SharingMode::eExclusive,
+    };
+    buffer.buffer = Vulkan::Check(device.createBuffer(buffer_ci));
+    Vulkan::Check(device.bindBufferMemory(buffer.buffer, imported_memory, 0));
+    buffer.bda_addr = device.getBufferAddress(vk::BufferDeviceAddressInfo{
+        .buffer = buffer.buffer,
+    });
+    ASSERT_MSG(buffer.bda_addr != 0, "Failed to get buffer device address");
+    Vulkan::SetObjectName(device, Handle(), debug_name);
+}
+
 void Buffer::Flush(u64 offset, u64 size) {
     if (mapped_data.empty() || is_coherent) {
         return;

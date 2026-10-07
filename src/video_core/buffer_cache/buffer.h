@@ -84,6 +84,11 @@ struct Buffer {
     explicit Buffer(const Vulkan::Instance& instance, VAddr cpu_addr_, u64 size_bytes_,
                     MemoryType mem_type, std::string_view debug_name = "");
 
+    /// Creates a buffer over memory imported with VK_EXT_external_memory_host. The memory
+    /// stays owned by the caller and must outlive the buffer.
+    explicit Buffer(const Vulkan::Instance& instance, VAddr cpu_addr_, u64 size_bytes_,
+                    vk::DeviceMemory imported_memory, std::string_view debug_name);
+
     Buffer& operator=(const Buffer&) = delete;
     Buffer(const Buffer&) = delete;
 

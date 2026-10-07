@@ -12,6 +12,7 @@
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/memory_tracker.h"
 #include "video_core/buffer_cache/region_definitions.h"
+#include "video_core/buffer_cache/shared_backing.h"
 #include "video_core/renderer_vulkan/vk_graphics_pipeline.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
@@ -102,6 +103,11 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
         FindMemoryType(instance.GetMemoryProperties(), vk::MemoryPropertyFlagBits::eDeviceLocal,
                        reqs.memoryTypeBits)
             .value();
+
+    shared_backing = std::make_unique<SharedBacking>(instance, *memory);
+    if (shared_backing->IsEnabled()) {
+        LOG_INFO(Render, "UMA shared backing uses {:#x}-byte blocks", block_size);
+    }
 
     const u64 bda_pagetable_size =
         (blocks_per_arena_page * address_space.size()) * sizeof(vk::DeviceAddress);
@@ -197,8 +203,18 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
 
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         bool is_written, bool is_texel_buffer) {
+    // UMA E3: guest memory the GPU can use directly needs no stream copy, upload or download.
+    if (shared_backing->IsEnabled()) {
+        if (const auto shared =
+                ObtainSharedBuffer(device_addr, size, is_texel_buffer && !is_written)) {
+            scheduler.Census(UmaCensus::Kind::Buffer, device_addr, size, is_written ? 3 : 1,
+                             is_texel_buffer, 3);
+            return *shared;
+        }
+    }
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
-    if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size)) {
+    if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size) &&
+        !IsRegionShared(device_addr, size)) {
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
         memory->CopySparseMemory(device_addr, data, size);
         stream_buffer.Commit();
@@ -208,11 +224,14 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
     }
     const u64 first_block = device_addr >> block_shift;
     const u64 last_block = (device_addr + size - 1) >> block_shift;
+    if (shared_backing->IsEnabled()) {
+        DemoteSharedBlocks(first_block << block_shift, (last_block + 1) << block_shift);
+    }
     const auto* arena = GetArena(first_block, last_block);
     EnsureResident(arena, first_block, last_block);
     SynchronizeMemory(arena, device_addr, size, is_written, is_texel_buffer);
     if (is_texel_buffer && !is_written) {
-        SynchronizeMemoryFromImage(arena, device_addr, size);
+        SynchronizeMemoryFromImage(arena, arena->Offset(device_addr), device_addr, size);
     }
     if (is_written) {
         gpu_modified_ranges.Add(device_addr, size);
@@ -223,7 +242,14 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
 }
 
 std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_addr, u32 size) {
-    if (IsRegionGpuModified(device_addr, size)) {
+    // A shared region may have GPU writes that are recorded but not yet executed, so the image
+    // must be filled by a copy on the GPU timeline rather than from guest memory now.
+    if (shared_backing->IsEnabled()) {
+        if (const auto shared = ObtainSharedBuffer(device_addr, size, false)) {
+            return *shared;
+        }
+    }
+    if (IsRegionGpuModified(device_addr, size) || IsRegionShared(device_addr, size)) {
         return ObtainBuffer(device_addr, size, false);
     }
     const auto staging = staging_pool.Request(size, VideoCore::MemoryType::HostUncached,
@@ -387,16 +413,17 @@ bool BufferCache::SynchronizeMemory(const Buffer* arena, VAddr device_addr, u32 
         runtime.CopyBuffer(staging.buffer, arena, copies);
     }
     if (is_texel_buffer && !is_written) {
-        return SynchronizeMemoryFromImage(arena, device_addr, size);
+        return SynchronizeMemoryFromImage(arena, arena->Offset(device_addr), device_addr, size);
     }
     return false;
 }
 
-bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_addr, u32 size) {
+bool BufferCache::SynchronizeMemoryFromImage(const Buffer* buffer, u64 buffer_offset,
+                                             VAddr device_addr, u32 size) {
     if (auto type = texture_cache.IsMeta(device_addr)) {
         if (*type == TextureCache::MetaType::HTile) {
             static constexpr u32 ZmaskUncompressed = 0xf;
-            runtime.FillBuffer(arena, arena->Offset(device_addr), size, ZmaskUncompressed);
+            runtime.FillBuffer(buffer, buffer_offset, size, ZmaskUncompressed);
             return true;
         } else {
             LOG_WARNING(Render_Vulkan, "Unhandled metadata type {}", magic_enum::enum_name(*type));
@@ -410,14 +437,13 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
     ASSERT_MSG(device_addr == image.info.guest_address,
                "Texel buffer aliases image subresources {:x} : {:x}", device_addr,
                image.info.guest_address);
-    const u64 arena_offset = arena->Offset(device_addr);
     boost::container::small_vector<vk::BufferImageCopy, 8> buffer_copies;
     for (u32 mip = 0; mip < image.info.resources.levels; mip++) {
         const auto& mip_info = image.info.mips_layout[mip];
         const u32 width = std::max(image.info.size.width >> mip, 1u);
         const u32 height = std::max(image.info.size.height >> mip, 1u);
         const u32 depth = std::max(image.info.size.depth >> mip, 1u);
-        if (arena_offset + mip_info.offset + mip_info.size > arena->size_bytes) {
+        if (buffer_offset + mip_info.offset + mip_info.size > buffer->size_bytes) {
             break;
         }
         buffer_copies.push_back(vk::BufferImageCopy{
@@ -438,8 +464,133 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
         return false;
     }
     auto& tile_manager = texture_cache.GetTileManager();
-    tile_manager.TileImage(image, buffer_copies, arena, arena_offset);
+    tile_manager.TileImage(image, buffer_copies, buffer, buffer_offset);
     return true;
+}
+
+bool BufferCache::IsSharedBackingEnabled() const noexcept {
+    return shared_backing->IsEnabled();
+}
+
+bool BufferCache::IsRegionShared(VAddr addr, u64 size) const {
+    return shared_backing->IsEnabled() && shared_ranges.Intersects(addr, size);
+}
+
+std::optional<std::pair<const Buffer*, u64>> BufferCache::ObtainSharedBuffer(VAddr device_addr,
+                                                                             u64 size,
+                                                                             bool is_texel_read) {
+    // Shared state is kept per block, the granularity of the BDA page table, so that buffer
+    // descriptors and DMA accesses of one block always see the same memory.
+    const VAddr block_start = Common::AlignDown(device_addr, block_size);
+    const VAddr block_end = Common::AlignUp(device_addr + size, block_size);
+    const u64 first_block = block_start >> block_shift;
+    const u64 end_block = block_end >> block_shift;
+    bool has_mirror = false;
+    resident_ranges.ForEachInRange(first_block, end_block,
+                                   [&has_mirror](const Backing&) { has_mirror = true; });
+    if (has_mirror) {
+        // A block that already has arena memory stays mirrored until the guest unmaps it.
+        return std::nullopt;
+    }
+    if (is_texel_read && (texture_cache.IsMeta(device_addr) ||
+                          texture_cache.FindImageFromRange(device_addr, size))) {
+        // Reading an image as a texel buffer copies the image into the buffer. Keep that in
+        // the mirror instead of overwriting guest memory.
+        return std::nullopt;
+    }
+    const u64 block_bytes = block_end - block_start;
+    const auto phys_addr = memory->GetContiguousBacking(block_start, block_bytes);
+    if (!phys_addr) {
+        return std::nullopt;
+    }
+    const auto shared = shared_backing->Lookup(*phys_addr, block_bytes);
+    if (!shared) {
+        return std::nullopt;
+    }
+    const auto [buffer, block_offset] = *shared;
+    if (!shared_ranges.Contains(block_start, block_bytes)) {
+        MapSharedBlocks(block_start, block_end, buffer->BufferDeviceAddress() + block_offset);
+    }
+    shared_backing_used = true;
+    return std::make_pair(buffer, block_offset + (device_addr - block_start));
+}
+
+void BufferCache::MapSharedBlocks(VAddr block_start, VAddr block_end,
+                                  vk::DeviceAddress device_addr) {
+    boost::container::small_vector<vk::DeviceAddress, 64> entries;
+    for (VAddr block = block_start; block < block_end; block += block_size) {
+        entries.push_back(device_addr + (block - block_start));
+    }
+    WriteBdaEntries(block_start >> block_shift, entries);
+    shared_ranges.Add(block_start, block_end - block_start);
+}
+
+void BufferCache::DemoteSharedBlocks(VAddr block_start, VAddr block_end) {
+    const u64 size = block_end - block_start;
+    if (!shared_ranges.Intersects(block_start, size)) {
+        return;
+    }
+    LOG_WARNING(Render, "UMA shared backing: {:#x}..{:#x} falls back to the mirror", block_start,
+                block_end);
+    // The mirror uploads from guest memory, which must first receive the writes of work that
+    // used these blocks through the shared backing. EnsureResident then rewrites their BDA
+    // page table entries.
+    scheduler.Finish();
+    shared_ranges.Subtract(block_start, size);
+    memory_tracker->MarkRegionAsCpuModified(block_start, size);
+}
+
+void BufferCache::UnmapMemory(VAddr device_addr, u64 size) {
+    if (!shared_backing->IsEnabled() || size == 0) {
+        return;
+    }
+    liverpool->SendCommand<true>([this, device_addr, size] {
+        // The next use of an unmapped block resolves its guest memory again, so a remap to
+        // other physical memory is seen.
+        const VAddr block_start = Common::AlignDown(device_addr, block_size);
+        const VAddr block_end = Common::AlignUp(device_addr + size, block_size);
+        boost::container::small_vector<std::pair<VAddr, VAddr>, 4> ranges;
+        shared_ranges.ForEachInRange(
+            block_start, block_end - block_start,
+            [&ranges](VAddr start, VAddr end) { ranges.emplace_back(start, end); });
+        for (const auto& [start, end] : ranges) {
+            const std::vector<vk::DeviceAddress> entries((end - start) >> block_shift, 0);
+            WriteBdaEntries(start >> block_shift, entries);
+        }
+        shared_ranges.Subtract(block_start, block_end - block_start);
+    });
+}
+
+void BufferCache::WriteBdaEntries(u64 first_block, std::span<const vk::DeviceAddress> entries) {
+    const u64 bytes = entries.size_bytes();
+    const auto staging = staging_pool.Request(bytes, MemoryType::HostUncached);
+    std::memcpy(staging.mapped, entries.data(), bytes);
+    staging.Flush();
+    const vk::BufferCopy copy = {
+        .srcOffset = staging.offset,
+        .dstOffset = first_block * sizeof(vk::DeviceAddress),
+        .size = bytes,
+    };
+    runtime.CopyBuffer(staging.buffer, bda_pagetable_buffer.get(), {&copy, 1});
+}
+
+void BufferCache::RecordSharedBackingVisibility() {
+    if (!std::exchange(shared_backing_used, false)) {
+        return;
+    }
+    // Guest completion is published once this submit's timeline value is reached; the guest
+    // then reads its memory directly, so device writes must be available to the host by then.
+    const vk::MemoryBarrier2 barrier = {
+        .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
+        .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,
+        .dstStageMask = vk::PipelineStageFlagBits2::eHost,
+        .dstAccessMask = vk::AccessFlagBits2::eHostRead | vk::AccessFlagBits2::eHostWrite,
+    };
+    scheduler.EndRendering();
+    scheduler.CommandBuffer().pipelineBarrier2(vk::DependencyInfo{
+        .memoryBarrierCount = 1,
+        .pMemoryBarriers = &barrier,
+    });
 }
 
 void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
