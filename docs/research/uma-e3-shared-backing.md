@@ -74,10 +74,13 @@ Open still access guest memory while parsing.
 - **Image sources.** `ObtainBufferForImage` returns the shared buffer, so an image is filled by
   a GPU copy instead of a record-time CPU copy. Texel reads of images or metadata stay
   mirrored, because they write the image into the buffer.
-- **DmaData.** The fill/copy CPU fast paths skip regions that are shared or could be shared;
-  those are filled and copied on the GPU timeline. This also covers a second VA of physical
-  memory that recorded work uses through the first, as long as the second VA itself can be
-  shared.
+- **DmaData.** The fill/copy CPU fast paths skip destinations that are shared or could be
+  shared; those are filled and copied on the GPU timeline. This also covers a second VA of
+  physical memory that recorded work uses through the first, as long as the second VA itself
+  can be shared. A copy from a shared or shareable source into a destination that cannot be
+  shared waits for recorded work (`Finish`) and then copies in guest memory: a GPU copy would
+  leave the result in the destination's mirror, which readbacks Disabled/Relaxed never return
+  to the guest.
 - **WaitRegMem.** While the predicate fails, the CP submits newly recorded work before each
   yield. A shader writes guest memory only after its submit, and the producer may be recorded
   by another queue while this one waits.
