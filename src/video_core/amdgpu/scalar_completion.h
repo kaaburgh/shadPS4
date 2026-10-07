@@ -22,16 +22,16 @@ inline VideoCore::Sync::ScalarData ScalarSelector(DataSelect data) {
     }
 }
 inline VideoCore::Sync::ScalarCompletion OwnScalar(const PM4CmdEventWriteEop& p) {
-    if (!(p.int_sel == InterruptSelect::None || p.int_sel == InterruptSelect::IrqOnly ||
-          p.int_sel == InterruptSelect::IrqWhenWriteConfirm) ||
-        (p.int_sel == InterruptSelect::IrqOnly && p.data_sel != DataSelect::None))
+    // INT_SEL=3 (SEND_DATA_AFTER_WR_CONFIRM) writes the data and raises no interrupt.
+    if (p.int_sel == InterruptSelect::IrqOnly && p.data_sel != DataSelect::None)
         UNREACHABLE_MSG("Unsupported EOP scalar/IRQ combination");
     return {.family = VideoCore::Sync::ScalarFamily::Eop,
             .data = ScalarSelector(p.data_sel),
             .address = reinterpret_cast<VAddr>(p.Address<u32>()),
             .value = p.DataQWord(),
             .event_control = p.event_control,
-            .interrupt = p.int_sel != InterruptSelect::None};
+            .interrupt = p.int_sel == InterruptSelect::IrqOnly ||
+                         p.int_sel == InterruptSelect::IrqWhenWriteConfirm};
 }
 inline VideoCore::Sync::ScalarCompletion OwnScalar(const PM4CmdEventWriteEos& p) {
     if (p.command != PM4CmdEventWriteEos::Command::SignalFence)
