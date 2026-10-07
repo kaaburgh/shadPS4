@@ -87,6 +87,11 @@ public:
     /// Returns true when part of a region is currently served from the shared backing.
     [[nodiscard]] bool IsRegionShared(VAddr addr, u64 size) const;
 
+    /// Returns true when part of a region is served from the shared backing or the whole region
+    /// can be. Recorded work may use the same physical memory through another guest VA, so such
+    /// a region must be accessed on the GPU timeline.
+    [[nodiscard]] bool IsRegionSharedOrShareable(VAddr addr, u64 size);
+
     /// Returns true when buffers may be served from the guest physical backing (UMA E3).
     [[nodiscard]] bool IsSharedBackingEnabled() const noexcept;
 
@@ -138,6 +143,10 @@ private:
 
     bool SynchronizeMemoryFromImage(const Buffer* buffer, u64 buffer_offset, VAddr device_addr,
                                     u32 size);
+
+    /// Returns the shared buffer and the offset of block_start in it when every block of
+    /// [block_start, block_end) can be served from the guest physical backing.
+    std::optional<std::pair<Buffer*, u64>> LookupSharedBlocks(VAddr block_start, VAddr block_end);
 
     /// Serves a range from the guest physical backing when every block it touches can be.
     std::optional<std::pair<const Buffer*, u64>> ObtainSharedBuffer(VAddr device_addr, u64 size,
