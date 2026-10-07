@@ -5,6 +5,7 @@
 
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include "common/checked_write.h"
@@ -254,6 +255,10 @@ public:
     void SetPrtArea(u32 id, VAddr address, u64 size);
 
     void CopySparseMemory(VAddr source, u8* dest, u64 size);
+
+    /// Returns the offset into the physical backing of [virtual_addr, virtual_addr + size) when
+    /// the whole range is mapped to one contiguous piece of it, as seen by CopySparseMemory.
+    std::optional<PAddr> GetContiguousBacking(VAddr virtual_addr, u64 size) const;
 
     bool TryWriteBacking(void* address, const void* data, u64 size);
     // Checked CP scalar publication. Direct VA mode retains CPU tracking/fault behavior;
