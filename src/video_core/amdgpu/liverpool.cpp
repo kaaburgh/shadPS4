@@ -1007,6 +1007,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         [&] { return process_thread.get_stop_token().stop_requested(); });
                     break;
                 }
+                if (!wait_reg_mem->Test(regs.reg_array) && rasterizer) {
+                    rasterizer->FlushForMemoryWait();
+                }
                 while (!wait_reg_mem->Test(regs.reg_array)) {
                     YIELD_GFX();
                 }
@@ -1322,6 +1325,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         case PM4ItOpcode::WaitRegMem: {
             const auto* wait_reg_mem = reinterpret_cast<const PM4CmdWaitRegMem*>(header);
             ASSERT(wait_reg_mem->engine.Value() == PM4CmdWaitRegMem::Engine::Me);
+            if (!wait_reg_mem->Test(regs.reg_array) && rasterizer) {
+                rasterizer->FlushForMemoryWait();
+            }
             while (!wait_reg_mem->Test(regs.reg_array)) {
                 YIELD_ASC(vqid);
             }

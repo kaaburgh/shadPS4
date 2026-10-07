@@ -48,6 +48,7 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
 
     scheduler.SetSubmitCallback([this](Vulkan::SubmitInfo& info) {
         runtime.FlushBarriers();
+        buffer_cache.RecordSharedBackingVisibility();
         buffer_cache.SubmitPendingArenaBinds(info);
     });
 }
@@ -397,6 +398,14 @@ u64 Rasterizer::Flush() {
 
 void Rasterizer::Finish(uint64_t caller) {
     scheduler.Finish(caller);
+}
+
+void Rasterizer::FlushForMemoryWait() {
+    // With shared backing a shader writes guest memory directly, so a CP wait on such a
+    // value can only be satisfied once the recorded work is submitted.
+    if (buffer_cache.IsSharedBackingEnabled()) {
+        scheduler.Flush();
+    }
 }
 
 void Rasterizer::OnSubmit() {
@@ -1171,7 +1180,9 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
                "FillBuffer address and size must be a multiple of 4 bytes");
     if (!is_gds) {
         texture_cache.ClearMeta(address);
-        if (!buffer_cache.IsRegionGpuModified(address, num_bytes)) {
+        // Shared regions may be in use by recorded work, so fill them on the GPU timeline.
+        if (!buffer_cache.IsRegionGpuModified(address, num_bytes) &&
+            !buffer_cache.IsRegionShared(address, num_bytes)) {
             u32* buffer = std::bit_cast<u32*>(address);
             scheduler.Census(UmaCensus::Kind::CpuWrite, address, num_bytes, 5);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);
@@ -1189,8 +1200,10 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
     Scheduler::CensusCommandScope census_command{scheduler, 6};
-    if (!dst_gds && !buffer_cache.IsRegionGpuModified(dst, num_bytes)) {
+    if (!dst_gds && !buffer_cache.IsRegionGpuModified(dst, num_bytes) &&
+        !buffer_cache.IsRegionShared(dst, num_bytes)) {
         if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
+            !buffer_cache.IsRegionShared(src, num_bytes) &&
             !texture_cache.FindImageFromRange(src, num_bytes)) {
             // Both buffers were not transferred to GPU yet. Can safely copy in host memory.
             scheduler.Census(UmaCensus::Kind::CpuWrite, dst, num_bytes, 6, src);
@@ -1276,6 +1289,7 @@ void Rasterizer::RegisterMemory(VAddr addr, u64 size) {
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
     UmaCensus::Emit(UmaCensus::Kind::GpuUnmap, addr, size);
     buffer_cache.InvalidateMemory(addr, size);
+    buffer_cache.UnmapMemory(addr, size);
     texture_cache.UnmapMemory(addr, size);
     {
         std::scoped_lock lock{mapped_ranges_mutex};
