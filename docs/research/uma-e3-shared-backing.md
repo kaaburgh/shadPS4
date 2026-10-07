@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
+SPDX-License-Identifier: GPL-2.0-or-later
+-->
+
 # E3 slice: buffers served from the guest physical backing (opt-in)
 
 Branch: `research/uma-e3-shared-backing`, fork kaaburgh/shadPS4.

@@ -63,13 +63,14 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     // sparseAddressSpaceSize = 2 GiB, so it gets 1 GiB arenas.
     const u64 arena_limit =
         std::min<u64>(instance.MaxBufferSize(), instance.SparseAddressSpaceSize() / 2);
-    arena_page_bits = std::clamp<u64>(std::bit_width(arena_limit) - 1, MIN_ARENA_PAGE_BITS,
-                                      MAX_ARENA_PAGE_BITS);
+    arena_page_bits =
+        std::clamp<u64>(std::bit_width(arena_limit) - 1, MIN_ARENA_PAGE_BITS, MAX_ARENA_PAGE_BITS);
     arena_page_size = u64{1} << arena_page_bits;
     address_space.resize(u64{1} << (ADDRESS_SPACE_BITS - arena_page_bits));
     if (arena_page_bits < MAX_ARENA_PAGE_BITS) {
-        LOG_INFO(Render, "Using {:#x}-byte sparse buffer arenas (maxBufferSize {:#x}, "
-                         "sparseAddressSpaceSize {:#x})",
+        LOG_INFO(Render,
+                 "Using {:#x}-byte sparse buffer arenas (maxBufferSize {:#x}, "
+                 "sparseAddressSpaceSize {:#x})",
                  arena_page_size, instance.MaxBufferSize(), instance.SparseAddressSpaceSize());
     }
 
