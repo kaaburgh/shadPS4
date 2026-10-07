@@ -49,7 +49,7 @@ SharedBacking::SharedBacking(const Vulkan::Instance& instance_, Core::MemoryMana
     backing_base = address_space.BackingBase();
     backing_size = Common::AlignDown(address_space.GetBackingSize(), alignment);
     chunks.resize(Common::DivCeil(backing_size, CHUNK_SIZE));
-    enabled = true;
+    enabled.store(true, std::memory_order_relaxed);
     LOG_INFO(Render_Vulkan,
              "UMA shared backing enabled: {:#x} bytes of guest backing in {} chunks of {:#x}",
              backing_size, chunks.size(), CHUNK_SIZE);
@@ -66,7 +66,7 @@ SharedBacking::~SharedBacking() {
 }
 
 std::optional<std::pair<Buffer*, u64>> SharedBacking::Lookup(PAddr phys_addr, u64 size) {
-    if (!enabled || size == 0 || phys_addr >= backing_size || size > backing_size - phys_addr) {
+    if (!IsEnabled() || size == 0 || phys_addr >= backing_size || size > backing_size - phys_addr) {
         return std::nullopt;
     }
     const u64 index = phys_addr >> CHUNK_BITS;
@@ -88,8 +88,23 @@ SharedBacking::Chunk* SharedBacking::GetChunk(u64 index) {
     if (chunk.failed) {
         return nullptr;
     }
-    chunk.failed = true;
+    if (!ImportChunk(index, chunk)) {
+        chunk.failed = true;
+        if (!any_imported) {
+            // The import mechanism does not work on this device; RADV refuses file-backed host
+            // pointers. Nothing is served from the backing yet, so turning shared backing off
+            // leaves no shared block behind and stops paying for the shared path.
+            enabled.store(false, std::memory_order_relaxed);
+            LOG_WARNING(Render_Vulkan, "UMA shared backing: the first import failed; turning "
+                                       "shared backing off, all buffers use mirrors");
+        }
+        return nullptr;
+    }
+    any_imported = true;
+    return &chunk;
+}
 
+bool SharedBacking::ImportChunk(u64 index, Chunk& chunk) {
     const u64 base = index << CHUNK_BITS;
     const u64 size = std::min(CHUNK_SIZE, backing_size - base);
     void* host_pointer = backing_base + base;
@@ -100,7 +115,7 @@ SharedBacking::Chunk* SharedBacking::GetChunk(u64 index) {
     if (props_result != vk::Result::eSuccess) {
         LOG_ERROR(Render_Vulkan, "UMA shared backing: host pointer properties failed: {}",
                   vk::to_string(props_result));
-        return nullptr;
+        return false;
     }
     const vk::ExternalMemoryBufferCreateInfo external_ci = {
         .handleTypes = HostHandleType,
@@ -133,7 +148,7 @@ SharedBacking::Chunk* SharedBacking::GetChunk(u64 index) {
                   "UMA shared backing: no host-coherent memory type for imported buffers (host "
                   "{:#x}, buffer {:#x})",
                   host_props.memoryTypeBits, reqs.memoryTypeBits);
-        return nullptr;
+        return false;
     }
     const u32 memory_type = std::countr_zero(type_bits);
 
@@ -154,17 +169,16 @@ SharedBacking::Chunk* SharedBacking::GetChunk(u64 index) {
     if (alloc_result != vk::Result::eSuccess) {
         LOG_ERROR(Render_Vulkan, "UMA shared backing: importing chunk {:#x} failed: {}", base,
                   vk::to_string(alloc_result));
-        return nullptr;
+        return false;
     }
     chunk.memory = memory;
     chunk.buffer = std::make_unique<Buffer>(instance, base, size, memory,
                                             fmt::format("Shared backing {:#x}", base));
-    chunk.failed = false;
     LOG_INFO(Render_Vulkan,
              "UMA shared backing: imported physical {:#x}..{:#x} as memory type {} (host types "
              "{:#x}, buffer types {:#x})",
              base, base + size, memory_type, host_props.memoryTypeBits, reqs.memoryTypeBits);
-    return &chunk;
+    return true;
 }
 
 } // namespace VideoCore

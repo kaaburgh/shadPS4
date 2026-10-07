@@ -176,7 +176,6 @@ private:
 
     std::unique_ptr<SharedBacking> shared_backing;
     RangeSet shared_ranges;
-    bool shared_backing_used{};
 
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;

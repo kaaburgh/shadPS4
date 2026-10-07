@@ -528,7 +528,6 @@ std::optional<std::pair<const Buffer*, u64>> BufferCache::ObtainSharedBuffer(VAd
     if (!shared_ranges.Contains(block_start, block_bytes)) {
         MapSharedBlocks(block_start, block_end, buffer->BufferDeviceAddress() + block_offset);
     }
-    shared_backing_used = true;
     return std::make_pair(buffer, block_offset + (device_addr - block_start));
 }
 
@@ -594,11 +593,14 @@ void BufferCache::WriteBdaEntries(u64 first_block, std::span<const vk::DeviceAdd
 }
 
 void BufferCache::RecordSharedBackingVisibility() {
-    if (!std::exchange(shared_backing_used, false)) {
+    if (!shared_backing->IsEnabled()) {
         return;
     }
     // Guest completion is published once this submit's timeline value is reached; the guest
     // then reads its memory directly, so device writes must be available to the host by then.
+    // Every submit gets the barrier, not only those that obtained a shared buffer: a shader
+    // can reach shared blocks through BDA alone. It sits right before the timeline signal,
+    // which waits for all work of the submit anyway.
     const vk::MemoryBarrier2 barrier = {
         .srcStageMask = vk::PipelineStageFlagBits2::eAllCommands,
         .srcAccessMask = vk::AccessFlagBits2::eMemoryWrite,

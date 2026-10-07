@@ -81,13 +81,17 @@ Open still access guest memory while parsing.
 - **WaitRegMem.** While the predicate fails, the CP submits newly recorded work before each
   yield. A shader writes guest memory only after its submit, and the producer may be recorded
   by another queue while this one waits.
-- **Visibility.** Each submit that used shared buffers ends with an
-  ALL_COMMANDS/MEMORY_WRITE → HOST/HOST_READ|HOST_WRITE memory barrier.
+- **Visibility.** While shared backing is enabled, every submit ends with an
+  ALL_COMMANDS/MEMORY_WRITE → HOST/HOST_READ|HOST_WRITE memory barrier. A shader can reach
+  shared blocks through BDA without obtaining a buffer in that submit. The barrier sits right
+  before the timeline signal, which waits for all work of the submit anyway.
 
 **Opt-in.** Set `SHADPS4_UMA_SHARED_BACKING=1`; the device must support
 `VK_EXT_external_memory_host`. A chunk whose import fails is remembered and its requests use
-the mirror. RADV fails here: libdrm creates userptr BOs with `AMDGPU_GEM_USERPTR_ANONONLY`,
-and amdgpu refuses file-backed memory (kaaburgh/shadPS4#9).
+the mirror. If the very first import fails, shared backing turns itself off: nothing is shared
+yet, so the emulator then behaves as without the variable. That is the expected outcome on
+RADV, where libdrm creates userptr BOs with `AMDGPU_GEM_USERPTR_ANONONLY` and amdgpu refuses
+file-backed memory, until a udmabuf importer exists (kaaburgh/shadPS4#9).
 
 Without the variable the emulator behaves as E1B, except for the arena size from the lavapipe
 patch. Arenas stay 4 GiB unless the device reports a sparse address space below 8 GiB or a
@@ -132,8 +136,8 @@ Environment:
 - **Shared.** Every checksum and digest equals the mirror Precise reference. The shared runs
   logged no mirror fallback and no `<Critical>` line.
 - **After the review fixes** (arena rounding, host-coherent memory type, asynchronous unmap
-  reset, DMA shareable check, WaitRegMem flush per poll), all five columns were re-run with
-  identical results. lavapipe still gets 1 GiB arenas; its one chunk is imported as memory type
+  reset, DMA shareable check, WaitRegMem flush per poll, host barrier on every submit, turning
+  off after a failed first import), all five columns were re-run with identical results. lavapipe still gets 1 GiB arenas; its one chunk is imported as memory type
   0, its only host-import type.
 
 **Negative controls.** Temporary builds, not committed; shared backing on, Disabled mode.
