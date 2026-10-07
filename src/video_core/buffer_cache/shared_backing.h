@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -33,7 +34,8 @@ struct Buffer;
  * arena). Indexing by physical address keeps an import valid across guest remaps, and two guest
  * aliases of the same physical page resolve to the same bytes.
  *
- * Opt-in with SHADPS4_UMA_SHARED_BACKING=1. Not thread safe: used from the CP thread only.
+ * Opt-in with SHADPS4_UMA_SHARED_BACKING=1. Used from the CP thread only, except IsEnabled,
+ * which any thread may call.
  */
 class SharedBacking {
 public:
@@ -46,9 +48,10 @@ public:
     SharedBacking(const SharedBacking&) = delete;
     SharedBacking& operator=(const SharedBacking&) = delete;
 
-    /// True when the opt-in is set and the device can import the backing.
+    /// True when the opt-in is set and the device can import the backing. Turns false if the
+    /// first import fails.
     [[nodiscard]] bool IsEnabled() const noexcept {
-        return enabled;
+        return enabled.load(std::memory_order_relaxed);
     }
 
     /// Returns the buffer over physical range [phys_addr, phys_addr + size) and the offset of
@@ -63,11 +66,13 @@ private:
     };
 
     Chunk* GetChunk(u64 index);
+    bool ImportChunk(u64 index, Chunk& chunk);
 
     const Vulkan::Instance& instance;
     u8* backing_base{};
     u64 backing_size{};
-    bool enabled{};
+    std::atomic<bool> enabled{};
+    bool any_imported{};
     std::vector<Chunk> chunks;
 };
 
