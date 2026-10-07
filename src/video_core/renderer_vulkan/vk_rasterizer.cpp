@@ -1206,8 +1206,13 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
     if (!dst_gds && !buffer_cache.IsRegionGpuModified(dst, num_bytes) &&
         !buffer_cache.IsRegionSharedOrShareable(dst, num_bytes)) {
         if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
-            !buffer_cache.IsRegionSharedOrShareable(src, num_bytes) &&
             !texture_cache.FindImageFromRange(src, num_bytes)) {
+            if (buffer_cache.IsRegionSharedOrShareable(src, num_bytes)) {
+                // Recorded work may still write the source, also through another guest VA. A
+                // GPU copy would leave the result in the destination's mirror, which readbacks
+                // Disabled/Relaxed never return to the guest, so wait for that work instead.
+                scheduler.Finish();
+            }
             // Both buffers were not transferred to GPU yet. Can safely copy in host memory.
             scheduler.Census(UmaCensus::Kind::CpuWrite, dst, num_bytes, 6, src);
             std::memcpy(std::bit_cast<void*>(dst), std::bit_cast<void*>(src), num_bytes);
