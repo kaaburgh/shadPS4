@@ -343,9 +343,11 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
         }
         case PM4ItOpcode::DumpConstRam: {
             const auto* dump_const = reinterpret_cast<const PM4DumpConstRam*>(header);
-            if (rasterizer)
+            if (rasterizer) {
+                rasterizer->FinishForSharedCpuAccess(PM4ItOpcode::DumpConstRam);
                 rasterizer->Census(UmaCensus::Kind::CpuWrite, dump_const->Address<VAddr>(),
                                    dump_const->Size(), u64(PM4ItOpcode::DumpConstRam));
+            }
             memcpy(dump_const->Address<void*>(),
                    cblock.constants_heap.data() + dump_const->Offset(), dump_const->Size());
             break;
@@ -935,6 +937,7 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 if (!write_data->wr_one_addr.Value()) {
                     if (rasterizer) {
                         rasterizer->OnFence();
+                        rasterizer->FinishForSharedCpuAccess(PM4ItOpcode::WriteData);
                     }
                     if (rasterizer)
                         rasterizer->Census(UmaCensus::Kind::CpuWrite,
@@ -1058,6 +1061,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 const auto* cond_exec = reinterpret_cast<const PM4CmdCondExec*>(header);
                 if (cond_exec->command.Value() != 0) {
                     LOG_WARNING(Render, "IT_COND_EXEC used a reserved command");
+                }
+                if (rasterizer) {
+                    rasterizer->FinishForSharedCpuAccess(PM4ItOpcode::CondExec);
                 }
                 const auto skip = *cond_exec->Address() == false;
                 if (skip) {
@@ -1294,6 +1300,7 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             if (!write_data->wr_one_addr.Value()) {
                 if (rasterizer) {
                     rasterizer->OnFence();
+                    rasterizer->FinishForSharedCpuAccess(PM4ItOpcode::WriteData);
                 }
                 if (rasterizer)
                     rasterizer->Census(UmaCensus::Kind::CpuWrite, write_data->Address<VAddr>(),
