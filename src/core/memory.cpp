@@ -242,6 +242,7 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
                             phys_handle->second.base + start_in_dma, UmaCensus::origin_tag,
                             UmaCensus::origin_packet, u32(vma.type));
             memcpy(backing, data, copy_size);
+            data = static_cast<const u8*>(data) + copy_size;
             size -= copy_size;
         }
     }
