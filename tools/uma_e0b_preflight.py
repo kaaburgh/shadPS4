@@ -17,7 +17,8 @@ import subprocess
 import sys
 
 PROBE_COMMIT = "e35713c7e56e751a01c7d3a6606c3d6c1a65ac5b"
-PROBE_REMOTE_BRANCH = "claude/shadps4-uma-shared-buffer-review-5a1q8y"
+# Durable branch at PROBE_COMMIT, fetched when a clone does not have the commit.
+PROBE_BRANCH = "research/uma-e0b-probe"
 TESTS = ("T4b.planb_coherence_stress", "T5b.planb_remap_identity")
 VARIANTS = ("dmabuf/bda", "dmabuf/ssbo")
 
@@ -95,6 +96,12 @@ def judge(report: dict, mode: str) -> dict:
     }
 
 
+def exit_code(verdict: str) -> int:
+    if verdict in ("RADV_IMPORT_PROTOTYPE_GO", "SELFTEST_PASS_NOT_REAL_DMABUF"):
+        return 0
+    return 1 if verdict == "FAIL" else 2
+
+
 def command(args: list[str], log: Path, cwd: Path | None = None,
             env: dict[str, str] | None = None) -> int:
     with log.open("w", encoding="utf-8") as stream:
@@ -110,10 +117,10 @@ def prepare_probe(root: Path, out: Path) -> Path:
 
     commit = git("cat-file", "-e", PROBE_COMMIT + "^{commit}")
     if commit.returncode:
-        fetch = git("fetch", "origin", PROBE_REMOTE_BRANCH)
+        fetch = git("fetch", "origin", PROBE_BRANCH)
         if fetch.returncode or git("cat-file", "-e", PROBE_COMMIT + "^{commit}").returncode:
-            raise RuntimeError("pinned E0b source is unavailable; fetch origin/" +
-                               PROBE_REMOTE_BRANCH + " (wanted " + PROBE_COMMIT + ")")
+            raise RuntimeError("pinned E0b source is unavailable; fetch origin/" + PROBE_BRANCH +
+                               " (wanted " + PROBE_COMMIT + ")")
     archive = out / "e0b-source.tar"
     with archive.open("wb") as stream:
         export = subprocess.run(["git", "-C", str(root), "archive", PROBE_COMMIT,
@@ -187,9 +194,7 @@ def run_probe(args: argparse.Namespace) -> int:
     print("Evidence: " + str(out))
     for reason in result.get("problems", []) + result.get("failures", []) + result.get("blocked", []):
         print("  - " + reason)
-    return 0 if result["verdict"] in ("RADV_IMPORT_PROTOTYPE_GO",
-                                       "SELFTEST_PASS_NOT_REAL_DMABUF") else (
-               1 if result["verdict"] == "FAIL" else 2)
+    return exit_code(result["verdict"])
 
 
 def main() -> int:
@@ -217,8 +222,7 @@ def main() -> int:
         print(error, file=sys.stderr)
         return 2
     print(json.dumps(result, indent=2))
-    return 0 if result["verdict"] in ("RADV_IMPORT_PROTOTYPE_GO",
-                                       "SELFTEST_PASS_NOT_REAL_DMABUF") else 2
+    return exit_code(result["verdict"])
 
 
 if __name__ == "__main__":

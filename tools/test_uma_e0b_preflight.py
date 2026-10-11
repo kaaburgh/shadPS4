@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from uma_e0b_preflight import judge
+from uma_e0b_preflight import exit_code, judge
 
 
 def report(mode="radv", status="PASS"):
@@ -29,6 +29,13 @@ def report(mode="radv", status="PASS"):
 
 
 class VerdictTests(unittest.TestCase):
+    def test_exit_codes_match_for_run_and_classify(self):
+        self.assertEqual(exit_code("SELFTEST_PASS_NOT_REAL_DMABUF"), 0)
+        self.assertEqual(exit_code("RADV_IMPORT_PROTOTYPE_GO"), 0)
+        self.assertEqual(exit_code("FAIL"), 1)
+        for verdict in ("BLOCKED", "WRONG_DEVICE", "INVALID_REPORT", "INFRA_FAIL"):
+            self.assertEqual(exit_code(verdict), 2)
+
     def test_radv_success_is_prototype_gate_only(self):
         self.assertEqual(judge(report(), "radv")["verdict"], "RADV_IMPORT_PROTOTYPE_GO")
 

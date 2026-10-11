@@ -8,7 +8,7 @@ Related: [shadPS4 #9](https://github.com/kaaburgh/shadPS4/issues/9), [shadPS4 ro
 
 Before modifying SharedBacking, test whether **real Linux /dev/udmabuf -> Vulkan DMA-BUF** imports on AMD/RADV preserve CPU/GPU coherence and remap lifetime. The existing E3 host-pointer backend cannot import its memfd backing on RADV.
 
-Instead of copying the existing comprehensive E0b host probe into another branch, the runner extracts its pinned source at [e35713c](https://github.com/kaaburgh/shadPS4/tree/e35713c7e56e751a01c7d3a6606c3d6c1a65ac5b/tools/e0b_uma_probe) from the Git object database, builds it separately and checks a small, relevant subset. It can fetch the source branch from origin if the commit is missing. The source is pinned so both machines run the identical probe.
+Instead of copying the existing comprehensive E0b host probe into another branch, the runner extracts its pinned source at [e35713c](https://github.com/kaaburgh/shadPS4/tree/e35713c7e56e751a01c7d3a6606c3d6c1a65ac5b/tools/e0b_uma_probe) from the Git object database, builds it separately and checks a small, relevant subset. If a clone does not have the commit, the runner fetches the branch `research/uma-e0b-probe`, which points at it. The source is pinned so both machines run the identical probe.
 
 This is host-only Vulkan, **not** a PS4 guest workload; OpenOrbis, Xvfb and a commercial game dump are not required.
 
