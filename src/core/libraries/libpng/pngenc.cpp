@@ -238,7 +238,8 @@ s32 PS4_SYSV_ABI scePngEncEncode(OrbisPngEncHandle handle, const OrbisPngEncEnco
     }
     const u64 row_bytes = u64(param->image_width) * 4;
     const u64 src_pitch = param->image_pitch > 0 ? param->image_pitch : row_bytes;
-    if (src_pitch < row_bytes ||
+    // Checking row_bytes first keeps both factors of the product below 2^32.
+    if (row_bytes > param->image_mem_size || src_pitch < row_bytes ||
         (param->image_height - 1) * src_pitch + row_bytes > param->image_mem_size) {
         LOG_ERROR(Lib_Png, "Source does not fit: {}x{}, pitch = {}, imageMemSize = {}",
                   param->image_width, param->image_height, param->image_pitch,
