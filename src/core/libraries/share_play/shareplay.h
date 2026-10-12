@@ -13,6 +13,8 @@ class SymbolsResolver;
 
 namespace Libraries::SharePlay {
 
+constexpr int ORBIS_SHARE_PLAY_ERROR_INVALID_ARGS = 0x810E0001;
+
 constexpr int ORBIS_SHARE_PLAY_CONNECTION_STATUS_DORMANT = 0x00;
 constexpr int ORBIS_SHARE_PLAY_CONNECTION_STATUS_READY = 0x01;
 constexpr int ORBIS_SHARE_PLAY_CONNECTION_STATUS_CONNECTED = 0x02;
