@@ -29,8 +29,9 @@ private:
     std::string_view trophy_type;
     ImGui::RefCountedTexture trophy_icon;
     ImGui::RefCountedTexture trophy_type_icon;
-    SDL_AudioStream* stream;
-    SDL_AudioDeviceID audioDevice;
+    SDL_AudioStream* stream = nullptr;
+    SDL_AudioDeviceID audioDevice = 0;
+    bool audio_initialized = false;
 };
 
 struct TrophyInfo {

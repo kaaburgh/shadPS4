@@ -88,46 +88,40 @@ TrophyUI::TrophyUI(const std::filesystem::path& trophyIconPath, const std::strin
 
     AddLayer(this);
 
-    if (SDL_WasInit(SDL_INIT_AUDIO) != 0) {
-        if (!SDL_Init(SDL_INIT_AUDIO)) {
-            LOG_ERROR(Lib_NpTrophy, "Unable to init SDL Audio for trophy sound: {}",
-                      SDL_GetError());
-            return;
-        }
+    // SDL counts subsystem references, so the popup takes its own and returns it in the
+    // destructor without affecting the game's audio.
+    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+        LOG_ERROR(Lib_NpTrophy, "Unable to init SDL Audio for trophy sound: {}", SDL_GetError());
+        return;
     }
+    audio_initialized = true;
 
-    audioDevice = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
-
-    // user selected Sdl Backend, use same device as Sdl main Device
+    // Play on the same device as the game's audio backend.
+    SDL_AudioDeviceID device_id = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
+    std::string main_device;
+    size_t name_prefix = 0;
     if (EmulatorSettings.GetAudioBackend() == 0) {
-        if (EmulatorSettings.GetSDLMainOutputDevice() != "Default Device") {
-            int count;
-            SDL_AudioDeviceID* devices = SDL_GetAudioPlaybackDevices(&count);
-
-            for (int i = 0; i < count; i++) {
-                std::string name = SDL_GetAudioDeviceName(devices[i]);
-                if (name == EmulatorSettings.GetSDLMainOutputDevice()) {
-                    audioDevice = SDL_OpenAudioDevice(devices[i], NULL);
-                }
-            }
-        }
-
-        // user selected OpenAl Backend, use same device as OpenAl main Device
+        main_device = EmulatorSettings.GetSDLMainOutputDevice();
     } else if (EmulatorSettings.GetAudioBackend() == 1) {
-        if (EmulatorSettings.GetOpenALMainOutputDevice() != "Default Device") {
-            int count;
-            SDL_AudioDeviceID* devices = SDL_GetAudioPlaybackDevices(&count);
-
-            for (int i = 0; i < count; i++) {
-                std::string name = SDL_GetAudioDeviceName(devices[i]);
-                // Device names are the same for openAl/Sdl, just with an added prefix
-                name.erase(0, 15);
-                if (name == EmulatorSettings.GetOpenALMainOutputDevice()) {
-                    audioDevice = SDL_OpenAudioDevice(devices[i], NULL);
-                }
+        main_device = EmulatorSettings.GetOpenALMainOutputDevice();
+        // Device names are the same for openAl/Sdl, just with an added prefix
+        name_prefix = 15;
+    }
+    if (!main_device.empty() && main_device != "Default Device") {
+        int count = 0;
+        SDL_AudioDeviceID* devices = SDL_GetAudioPlaybackDevices(&count);
+        for (int i = 0; i < count; i++) {
+            std::string name = SDL_GetAudioDeviceName(devices[i]);
+            name.erase(0, name_prefix);
+            if (name == main_device) {
+                device_id = devices[i];
+                break;
             }
         }
+        SDL_free(devices);
     }
+
+    audioDevice = SDL_OpenAudioDevice(device_id, nullptr);
 
     if (audioDevice == 0) {
         LOG_ERROR(Lib_NpTrophy, "Unable to open audio device for trophy sound playback: {}",
@@ -162,10 +156,10 @@ TrophyUI::~TrophyUI() {
     if (stream) {
         SDL_DestroyAudioStream(stream);
     }
-
-    // if emulator is not using sdl audio backend
-    if (EmulatorSettings.GetAudioBackend() != 0) {
+    if (audioDevice) {
         SDL_CloseAudioDevice(audioDevice);
+    }
+    if (audio_initialized) {
         SDL_QuitSubSystem(SDL_INIT_AUDIO);
     }
 
@@ -367,7 +361,7 @@ void TrophyUI::PlayWav(std::vector<unsigned char> wavData) {
         return;
     }
 
-    SDL_AudioStream* stream = SDL_CreateAudioStream(&spec, &spec);
+    stream = SDL_CreateAudioStream(&spec, &spec);
     SDL_BindAudioStream(audioDevice, stream);
 
     // make this louder than game stream
