@@ -113,8 +113,8 @@ bool PSF::Open(const std::vector<u8>& psf_buffer) {
         }
         const size_t key_offset = key_start + key_relative;
         const char* key = reinterpret_cast<const char*>(data + key_offset);
-        const auto* key_end = static_cast<const char*>(
-            std::memchr(key, 0, value_start - key_offset));
+        const auto* key_end =
+            static_cast<const char*>(std::memchr(key, 0, value_start - key_offset));
         if (!key_end) {
             return false;
         }

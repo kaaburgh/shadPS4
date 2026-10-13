@@ -144,7 +144,8 @@ TEST(PsfBounds, RejectsBadLengthsAndTypes) {
 
 TEST(PsfBounds, SupportsBoundedBinaryAndIntegerEntries) {
     PSF psf;
-    auto binary = ModifyEntry([](PSFRawEntry& e) { e.param_fmt.FromRaw(static_cast<u16>(PSFEntryFmt::Binary)); });
+    auto binary = ModifyEntry(
+        [](PSFRawEntry& e) { e.param_fmt.FromRaw(static_cast<u16>(PSFEntryFmt::Binary)); });
     ASSERT_TRUE(psf.Open(binary));
     auto bytes = psf.GetBinary("TITLE_ID");
     ASSERT_TRUE(bytes.has_value());
