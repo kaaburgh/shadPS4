@@ -41,8 +41,9 @@ MemoryManager::MemoryManager() {
     dmem_map.clear();
     dmem_map.emplace(0, PhysicalMemoryArea{0, total_direct_size});
 
-    // Pre-initialize flexible backing
-    total_flexible_size = ORBIS_KERNEL_FLEXIBLE_MEMORY_SIZE + extra_fmem;
+    // Pre-initialize flexible backing. The backing has ORBIS_KERNEL_FLEXIBLE_MEMORY_SIZE after
+    // total_size; extra flexible memory is counted in total_size until SetupMemoryRegions.
+    total_flexible_size = ORBIS_KERNEL_FLEXIBLE_MEMORY_SIZE;
     fmem_map.clear();
     fmem_map.emplace(total_size, PhysicalMemoryArea{total_size, total_flexible_size});
 
@@ -94,6 +95,14 @@ void MemoryManager::SetupMemoryRegions(u64 flexible_size, bool use_extended_mem1
                    last_dmem_area->second.size >= old_direct_size - total_direct_size,
                "Unable to shrink dmem map");
     last_dmem_area->second.size -= (old_direct_size - total_direct_size);
+
+    // The flexible pool only covers ORBIS_KERNEL_FLEXIBLE_MEMORY_SIZE, less than a flexible size
+    // raised by the title or extraFmemInMbytes. Give it the range direct memory just gave up.
+    if (old_direct_size > total_direct_size) {
+        fmem_map.emplace(
+            total_direct_size,
+            PhysicalMemoryArea{total_direct_size, old_direct_size - total_direct_size});
+    }
 
     LOG_INFO(Kernel_Vmm, "Configured memory regions: flexible size = {:#x}, direct size = {:#x}",
              total_flexible_size, total_direct_size);
