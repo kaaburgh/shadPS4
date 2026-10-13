@@ -410,6 +410,20 @@ void Rasterizer::FlushForMemoryWait() {
     }
 }
 
+void Rasterizer::FinishForSharedCpuAccess(AmdGpu::PM4ItOpcode packet) {
+    // With shared backing, recorded work reads and writes guest memory when it executes, also
+    // through other guest VAs that alias the same backing. A CPU access made while parsing
+    // must therefore wait for it, as mirror Precise does for GPU-modified pages.
+    if (!buffer_cache.IsSharedBackingEnabled()) {
+        return;
+    }
+    if (scheduler.IsKnownEmptyPrefix() && scheduler.IsFree(scheduler.CurrentTick() - 1)) {
+        return;
+    }
+    // Census caller tag: 0x100 | opcode of the packet that waited.
+    scheduler.Finish(0x100 | static_cast<u32>(packet));
+}
+
 void Rasterizer::OnSubmit() {
     buffer_cache.TickFrame();
     texture_cache.ProcessDownloadImages();
@@ -1186,6 +1200,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
         // guest VA, so fill them on the GPU timeline.
         if (!buffer_cache.IsRegionGpuModified(address, num_bytes) &&
             !buffer_cache.IsRegionSharedOrShareable(address, num_bytes)) {
+            FinishForSharedCpuAccess(AmdGpu::PM4ItOpcode::DmaData);
             u32* buffer = std::bit_cast<u32*>(address);
             scheduler.Census(UmaCensus::Kind::CpuWrite, address, num_bytes, 5);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);
@@ -1207,12 +1222,10 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         !buffer_cache.IsRegionSharedOrShareable(dst, num_bytes)) {
         if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
             !texture_cache.FindImageFromRange(src, num_bytes)) {
-            if (buffer_cache.IsRegionSharedOrShareable(src, num_bytes)) {
-                // Recorded work may still write the source, also through another guest VA. A
-                // GPU copy would leave the result in the destination's mirror, which readbacks
-                // Disabled/Relaxed never return to the guest, so wait for that work instead.
-                scheduler.Finish();
-            }
+            // Recorded work may still write the source, also through another guest VA. A GPU
+            // copy would leave the result in the destination's mirror, which readbacks
+            // Disabled/Relaxed never return to the guest, so wait for that work instead.
+            FinishForSharedCpuAccess(AmdGpu::PM4ItOpcode::DmaData);
             // Both buffers were not transferred to GPU yet. Can safely copy in host memory.
             scheduler.Census(UmaCensus::Kind::CpuWrite, dst, num_bytes, 6, src);
             std::memcpy(std::bit_cast<void*>(dst), std::bit_cast<void*>(src), num_bytes);

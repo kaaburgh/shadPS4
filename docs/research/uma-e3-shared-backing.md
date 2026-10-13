@@ -77,10 +77,18 @@ Open still access guest memory while parsing.
 - **DmaData.** The fill/copy CPU fast paths skip destinations that are shared or could be
   shared; those are filled and copied on the GPU timeline. This also covers a second VA of
   physical memory that recorded work uses through the first, as long as the second VA itself
-  can be shared. A copy from a shared or shareable source into a destination that cannot be
-  shared waits for recorded work (`Finish`) and then copies in guest memory: a GPU copy would
-  leave the result in the destination's mirror, which readbacks Disabled/Relaxed never return
-  to the guest.
+  can be shared. The remaining fast paths wait for recorded work first (next item). For a copy
+  from a shared or shareable source into a destination that cannot be shared, that is the only
+  correct order: a GPU copy would leave the result in the destination's mirror, which
+  readbacks Disabled/Relaxed never return to the guest.
+- **Parse-time CPU access** (kaaburgh/shadPS4#11). `Rasterizer::FinishForSharedCpuAccess` runs
+  `Finish` before the CP reads or writes guest memory while parsing `WRITE_DATA` (graphics and
+  compute), `COND_EXEC` and `DUMP_CONST_RAM`, and before the DmaData CPU fast paths. Recorded
+  work can reach any guest VA of a shared page, and shared pages are not tracked, so the wait
+  does not depend on the address. Mirror Precise waits the same way, but only for pages the
+  GPU modified. The wait is skipped when shared backing is off or nothing is recorded or in
+  flight. The census tags it with caller `0x100 | opcode`: `0x137` WRITE_DATA, `0x122`
+  COND_EXEC, `0x183` DUMP_CONST_RAM, `0x150` DMA_DATA.
 - **WaitRegMem.** While the predicate fails, the CP submits newly recorded work before each
   yield. A shader writes guest memory only after its submit, and the producer may be recorded
   by another queue while this one waits.
@@ -150,6 +158,16 @@ Environment:
 | EOP labels published while parsing, before host completion (pre-E1B behavior) | 10/11 FAIL with unwritten outputs; only gpu_solid_rt (render-target readback) passes |
 | `ObtainBufferForImage` copies shared regions on the CPU at record time | 11/11 PASS: the image-source guard is not exercised by the suite |
 
+**Parse-time CPU access** (kaaburgh/shadPS4#11). The full suite at shadps4-open-test `0327d3c`
+(19 tests) ran before and after the change in mirror Precise, shared Precise and shared
+Disabled. Only these results changed, all in shared runs and the same in both modes:
+
+| test | before | after |
+|---|---|---|
+| write_data_order | FAIL (`large_a`, `small_a`) | PASS |
+| cond_exec_gpu_predicate | FAIL (`gpu_pred_1`, `gpu_pred_0`) | PASS |
+| dma_alias_order | FAIL (`noncontiguous_fill`, `noncontiguous_copy`) | FAIL (`noncontiguous_copy`, kaaburgh/shadPS4#8) |
+
 ## Open
 
 - **Paths the suite does not reach.** These guards follow from the design but no test can fail
@@ -163,21 +181,26 @@ Environment:
   Each needs a dedicated workload (kaaburgh/shadPS4#13): a GPU-written WAIT_REG_MEM value, a
   BDA/flat-memory shader across a remap, a request straddling contiguous and non-contiguous
   mappings, and an image sourced from memory a dispatch writes in the same submit.
-- **E1C packets** (kaaburgh/shadPS4#11). The CP still accesses guest memory while parsing,
-  out of GPU order for shared memory:
-  - writes: `WRITE_DATA`, `DUMP_CONST_RAM`, ZPassDone, `MEM_SEMAPHORE`. `WRITE_DATA` regresses
-    against the mirror: a dispatch recorded before the packet now reads the new value;
-  - reads: `COND_EXEC`, `REWIND`, `INDIRECT_BUFFER` contents, sharps and user data;
+- **E1C packets** (kaaburgh/shadPS4#11). The packets under "Parse-time CPU access" wait for
+  recorded work. The CP still accesses guest memory while parsing, out of GPU order for shared
+  memory, in:
+  - writes: ZPassDone, `MEM_SEMAPHORE`;
+  - reads: `REWIND`, `INDIRECT_BUFFER` contents, sharps and user data;
   - Release-GDS publication and DmaData cp_sync/raw_wait remain as in E1B.
 
   EOP and `RELEASE_MEM` labels are not affected: E1B publishes them after host completion.
+  The cost of the new waits is unmeasured; the census tags above count them for E2. A
+  narrower rule (wait only for work that can reach the accessed range) is left until E2
+  shows the waits matter.
 - **Demotion** (kaaburgh/shadPS4#7). It runs `Finish` inside `ObtainBuffer`. From a FaultManager
   deferred operation this re-enters the scheduler and hangs; during draw binding it loses the
   vertex input and the vertex/index bindings already recorded for the draw. It needs a mirror
   request over an already shared block, which the suite never makes.
 - **Physical aliases** (kaaburgh/shadPS4#8). Shared state is tracked per VA. After a fallback,
   one alias can be mirrored while another stays shared. A DMA through an alias that cannot be
-  shared still takes the CPU fast path.
+  shared waits for recorded work before its CPU fast path. A GPU copy from such an alias still
+  uploads the alias's mirror from guest memory while recording, before recorded work through
+  the other alias has run (open-test `dma_alias_order`, case `noncontiguous_copy`).
 - **Textures.** Images and render targets stay in the TextureCache mirror; only buffers are
   shared.
 - **Fallbacks** (kaaburgh/shadPS4#12).
