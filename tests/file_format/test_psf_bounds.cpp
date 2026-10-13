@@ -69,6 +69,34 @@ TEST(PsfBounds, ValidTextAndRoundTrip) {
     EXPECT_EQ(*decoded.GetString("TITLE_ID"), "CUSA00000");
 }
 
+// An SFO as shadPS4 writes it, with every entry type, must parse back to the same values and
+// re-encode to the same bytes.
+TEST(PsfBounds, EncodedSfoWithEveryEntryTypeRoundTrips) {
+    PSF psf;
+    psf.AddString("CATEGORY", "gd");
+    psf.AddString("CONTENT_ID", "IV0000-TEST00001_00-SHADTESTPSFTEST0");
+    psf.AddString("TITLE", "Generated title");
+    psf.AddString("TITLE_ID", "TEST00001");
+    psf.AddInteger("ATTRIBUTE", -1);
+    psf.AddInteger("SYSTEM_VER", 0x04500000);
+    psf.AddBinary("SAVEDATA_BLOCKS", u64{0x1234567890abcdef});
+    psf.AddBinary("PARAMS", std::vector<u8>{1, 2, 3, 0, 5});
+    const auto bytes = psf.Encode();
+
+    PSF decoded;
+    ASSERT_TRUE(decoded.Open(bytes));
+    EXPECT_EQ(decoded.GetEntries().size(), psf.GetEntries().size());
+    EXPECT_EQ(decoded.GetString("CATEGORY"), "gd");
+    EXPECT_EQ(decoded.GetString("CONTENT_ID"), "IV0000-TEST00001_00-SHADTESTPSFTEST0");
+    EXPECT_EQ(decoded.GetString("TITLE"), "Generated title");
+    EXPECT_EQ(decoded.GetInteger("ATTRIBUTE"), -1);
+    EXPECT_EQ(decoded.GetInteger("SYSTEM_VER"), 0x04500000);
+    const auto params = decoded.GetBinary("PARAMS");
+    ASSERT_TRUE(params.has_value());
+    EXPECT_EQ(std::vector<u8>(params->begin(), params->end()), (std::vector<u8>{1, 2, 3, 0, 5}));
+    EXPECT_EQ(decoded.Encode(), bytes);
+}
+
 TEST(PsfBounds, ShortAndEmptyHeaders) {
     PSF psf;
     for (const size_t n : {size_t(0), size_t(1), kHeaderSize - 1}) {
