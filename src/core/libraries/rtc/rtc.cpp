@@ -742,7 +742,9 @@ bool ParseNumber(std::string_view str, size_t pos, size_t count, int& out, bool 
 bool ParseOffset(std::string_view str, size_t pos, bool colon, int& minutes) {
     int hours = 0;
     int mins = 0;
-    if (!ParseNumber(str, pos + 1, 2, hours) || !ParseNumber(str, pos + (colon ? 4 : 3), 2, mins)) {
+    if (!ParseNumber(str, pos + 1, 2, hours) ||
+        (colon && (pos + 3 >= str.size() || str[pos + 3] != ':')) ||
+        !ParseNumber(str, pos + (colon ? 4 : 3), 2, mins) || hours > 23 || mins > 59) {
         return false;
     }
     minutes = hours * 60 + mins;
@@ -828,13 +830,17 @@ int PS4_SYSV_ABI sceRtcParseRFC3339(OrbisRtcTick* pTickUtc, const char* pszDateT
     if (pTickUtc == nullptr || pszDateTime == nullptr)
         return ORBIS_RTC_ERROR_INVALID_POINTER;
 
-    // "2026-10-12T21:07:46[.fraction](Z|+HH:MM|-HH:MM)"
+    // "2026-10-12T21:07:46[.fraction](Z|+HH:MM|-HH:MM)", nothing after the zone. As RFC 3339
+    // allows, "T" and "Z" may be lower case and "T" may be a space.
     const std::string_view dateTimeString{pszDateTime};
     int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
     if (!ParseNumber(dateTimeString, 0, 4, year) || !ParseNumber(dateTimeString, 5, 2, month) ||
         !ParseNumber(dateTimeString, 8, 2, day) || !ParseNumber(dateTimeString, 11, 2, hour) ||
         !ParseNumber(dateTimeString, 14, 2, minute) ||
-        !ParseNumber(dateTimeString, 17, 2, second)) {
+        !ParseNumber(dateTimeString, 17, 2, second) || dateTimeString[4] != '-' ||
+        dateTimeString[7] != '-' ||
+        (dateTimeString[10] != 'T' && dateTimeString[10] != 't' && dateTimeString[10] != ' ') ||
+        dateTimeString[13] != ':' || dateTimeString[16] != ':') {
         return ORBIS_RTC_ERROR_BAD_PARSE;
     }
 
@@ -864,9 +870,19 @@ int PS4_SYSV_ABI sceRtcParseRFC3339(OrbisRtcTick* pTickUtc, const char* pszDateT
     }
 
     int offset = 0;
-    if (timezone_pos < dateTimeString.size() &&
-        (dateTimeString[timezone_pos] == '+' || dateTimeString[timezone_pos] == '-') &&
-        !ParseOffset(dateTimeString, timezone_pos, true, offset)) {
+    if (timezone_pos >= dateTimeString.size()) {
+        return ORBIS_RTC_ERROR_BAD_PARSE;
+    }
+    const char zone = dateTimeString[timezone_pos];
+    if (zone == 'Z' || zone == 'z') {
+        timezone_pos += 1;
+    } else if ((zone == '+' || zone == '-') &&
+               ParseOffset(dateTimeString, timezone_pos, true, offset)) {
+        timezone_pos += 6;
+    } else {
+        return ORBIS_RTC_ERROR_BAD_PARSE;
+    }
+    if (timezone_pos != dateTimeString.size()) {
         return ORBIS_RTC_ERROR_BAD_PARSE;
     }
     return ToUtcTick(dateTime, offset, pTickUtc);
