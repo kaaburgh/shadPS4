@@ -87,6 +87,19 @@ TEST_F(PatchPathTest, NoProviderFallbackForTraversingNames) {
     EXPECT_FALSE(result.ambiguous);
 }
 
+TEST_F(PatchPathTest, FindsPatchInSymlinkedProvider) {
+    const auto target = Create("../shadps4-linked-provider/Game.xml");
+    std::error_code ec;
+    fs::create_directory_symlink(target.parent_path(), root / "linked", ec);
+    if (ec) {
+        GTEST_SKIP() << "cannot create a directory symlink: " << ec.message();
+    }
+    const auto result = MemoryPatcher::ResolveExplicitPatchPath(root, "Game.xml");
+    EXPECT_FALSE(result.ambiguous);
+    EXPECT_EQ(result.path, root / "linked" / "Game.xml");
+    fs::remove_all(target.parent_path(), ec);
+}
+
 TEST_F(PatchPathTest, NoRecursiveProviderLookup) {
     Create("providerA/nested/Game.xml");
     EXPECT_TRUE(MemoryPatcher::ResolveExplicitPatchPath(root, "Game.xml").path.empty());

@@ -17,7 +17,7 @@ struct ExplicitPatchLookup {
 // Preserve explicit paths and direct PatchesDir entries, then search exactly
 // one provider-directory level for bare filenames only.
 inline ExplicitPatchLookup ResolveExplicitPatchPath(const std::filesystem::path& patch_dir,
-                                                   const std::filesystem::path& requested) {
+                                                    const std::filesystem::path& requested) {
     namespace fs = std::filesystem;
     std::error_code ec;
 
@@ -40,7 +40,8 @@ inline ExplicitPatchLookup ResolveExplicitPatchPath(const std::filesystem::path&
     while (!ec && it != end) {
         std::error_code entry_error;
         const auto& entry = *it;
-        if (!entry.is_symlink(entry_error) && entry.is_directory(entry_error)) {
+        // Like the automatic patch scan, follow symlinked provider folders.
+        if (entry.is_directory(entry_error)) {
             const auto candidate = entry.path() / requested;
             if (fs::is_regular_file(candidate, entry_error)) {
                 if (!result.path.empty()) {
