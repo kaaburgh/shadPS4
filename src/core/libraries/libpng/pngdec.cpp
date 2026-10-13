@@ -150,6 +150,8 @@ static s32 DecodeImage(png_structp png_ptr, png_infop info_ptr, PngStruct* pngda
             ptr += stride;
         }
     }
+    // Read the chunks after the image data, so a stream cut before IEND is an error.
+    png_read_end(png_ptr, nullptr);
 
     return (width > 32767 || height > 32767) ? 0 : (width << 16) | height;
 }
