@@ -12,6 +12,7 @@ layout (push_constant) uniform settings {
     float gamma;
     bool hdr;
     bool srgb_input;
+    bool rec709;
 } pp;
 
 const float cutoff = 0.0031308, a = 1.055, b = 0.055, d = 12.92;
@@ -33,12 +34,25 @@ vec3 degamma(vec3 rgb) {
     );
 }
 
+// BT.709 OETF. Rec.709 and sRGB share primaries and white point; only the transfer function
+// differs, and the output stays full range.
+vec3 rec709(vec3 rgb) {
+    return mix(
+        1.099 * pow(rgb, vec3(0.45)) - 0.099,
+        4.5 * rgb,
+        lessThan(rgb, vec3(0.018))
+    );
+}
+
 void main() {
     vec4 color_linear = texture(texSampler, uv);
     if (pp.hdr) {
         color = color_linear;
     } else {
         if (pp.srgb_input) color_linear.rgb = degamma(color_linear.rgb);
+        // Opt-in: encode with the Rec.709 curve and present that signal as if it were sRGB, like
+        // a PS4 graded for Rec.709 on an sRGB or gamma 2.2 display. This darkens shadows.
+        if (pp.rec709) color_linear.rgb = degamma(rec709(color_linear.rgb));
         color = vec4(gamma(color_linear.rgb), color_linear.a);
     }
 }
