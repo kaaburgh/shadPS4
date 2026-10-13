@@ -27,6 +27,27 @@ namespace Libraries::Np::NpTrophy {
 std::optional<TrophyUI> current_trophy_ui;
 std::queue<TrophyInfo> trophy_queue;
 std::mutex queueMtx;
+
+// Draws the current popup. AddTrophyToQueue replaces or destroys the popup on the guest thread,
+// so the render thread only calls into this layer, which lives for the whole run, and it reaches
+// the popup under queueMtx.
+class TrophyLayer final : public ImGui::Layer {
+public:
+    void Draw() override {
+        std::lock_guard lock(queueMtx);
+        if (current_trophy_ui) {
+            current_trophy_ui->Draw();
+        }
+    }
+
+    bool ShouldKeepDrawing() override {
+        std::lock_guard lock(queueMtx);
+        return current_trophy_ui.has_value();
+    }
+};
+
+TrophyLayer trophy_layer;
+std::once_flag trophy_layer_added;
 std::string side = "right";
 double trophy_timer;
 
@@ -130,8 +151,6 @@ TrophyUI::TrophyUI(const std::filesystem::path& trophyIconPath, const std::strin
 
     trophy_type_icon = RefCountedTexture::DecodePngTexture(imgdata);
 
-    AddLayer(this);
-
     // Popups are created and destroyed under queueMtx, so this needs no lock of its own.
     static SDL_AudioDeviceID shared_audio_device = 0;
     if (shared_audio_device == 0) {
@@ -169,12 +188,6 @@ TrophyUI::~TrophyUI() {
     if (stream) {
         SDL_DestroyAudioStream(stream);
     }
-
-    Finish();
-}
-
-void TrophyUI::Finish() {
-    RemoveLayer(this);
 }
 
 float fade_opacity = 0.0f;                 // Initial opacity (invisible)
@@ -307,8 +320,9 @@ void TrophyUI::Draw() {
 
     PopStyleVar();
 
+    // TrophyLayer::Draw holds queueMtx. Replacing or resetting current_trophy_ui destroys this
+    // popup, so nothing may touch it afterwards.
     if (trophy_timer <= 0) {
-        std::lock_guard<std::mutex> lock(queueMtx);
         if (!trophy_queue.empty()) {
             TrophyInfo next_trophy = trophy_queue.front();
             trophy_queue.pop();
@@ -384,7 +398,9 @@ void AddTrophyToQueue(const std::filesystem::path& trophyIconPath, const std::st
 
     if (EmulatorSettings.IsTrophyPopupDisabled()) {
         return;
-    } else if (current_trophy_ui.has_value()) {
+    }
+    std::call_once(trophy_layer_added, [] { ImGui::Layer::AddLayer(&trophy_layer); });
+    if (current_trophy_ui.has_value()) {
         current_trophy_ui.reset();
     }
 
