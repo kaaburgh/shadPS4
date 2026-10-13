@@ -57,6 +57,24 @@ std::filesystem::path OverlayPath(const std::filesystem::path& base, std::string
     return result;
 }
 
+std::vector<std::filesystem::path> UpdatePathCandidates(const std::filesystem::path& base) {
+    std::vector<std::filesystem::path> candidates{OverlayPath(base, "-UPDATE"),
+                                                  OverlayPath(base, "-patch")};
+    // Extracted packages are often laid out as <title>-app next to <title>-patch.
+    std::filesystem::path stem_path = base;
+    if (stem_path.extension() == ".zar") {
+        stem_path.replace_extension();
+    }
+    const std::string name = stem_path.filename().string();
+    static constexpr std::string_view AppSuffix = "-app";
+    if (name.size() > AppSuffix.size() && name.ends_with(AppSuffix)) {
+        const auto title = stem_path.parent_path() / name.substr(0, name.size() - AppSuffix.size());
+        candidates.push_back(OverlayPath(title, "-UPDATE"));
+        candidates.push_back(OverlayPath(title, "-patch"));
+    }
+    return candidates;
+}
+
 std::optional<std::filesystem::path> BaseGameFromOverlay(const std::filesystem::path& path) {
     std::filesystem::path stem_path = path;
     if (stem_path.extension() == ".zar") {
@@ -142,12 +160,11 @@ void MntPoints::Mount(const std::filesystem::path& host_folder, const std::strin
             stack.push_back(std::move(mods));
         }
         if (!ignore_game_patches) {
-            auto patch = probe_overlay(host_folder, "-UPDATE");
-            if (!patch) {
-                patch = probe_overlay(host_folder, "-patch");
-            }
-            if (patch) {
-                stack.push_back(std::move(patch));
+            for (const auto& update : UpdatePathCandidates(host_folder)) {
+                if (auto patch = CreateBackend(update, /*ro=*/true)) {
+                    stack.push_back(std::move(patch));
+                    break;
+                }
             }
         }
     }
@@ -227,11 +244,11 @@ std::filesystem::path MntPoints::GetHostPath(std::string_view path, bool* is_rea
     const auto corrected_path_sanitized = RemoveTrailingSlashes(corrected_path);
     std::filesystem::path host_path = mount->host_path;
 
-    // Update folder is either mount + "-UPDATE" or mount + "-patch"
-    std::filesystem::path patch_path = OverlayPath(mount->host_path, "-UPDATE");
-    if (!std::filesystem::exists(patch_path)) {
-        patch_path = OverlayPath(mount->host_path, "-patch");
-    }
+    // Update folder is the first update candidate that exists, else mount + "-patch"
+    const auto updates = UpdatePathCandidates(mount->host_path);
+    const auto update = std::ranges::find_if(
+        updates, [](const std::filesystem::path& p) { return std::filesystem::exists(p); });
+    std::filesystem::path patch_path = update != updates.end() ? *update : updates[1];
 
     // Mods folder can only be at mount + "-mods"
     std::filesystem::path mods_path = OverlayPath(mount->host_path, "-mods");

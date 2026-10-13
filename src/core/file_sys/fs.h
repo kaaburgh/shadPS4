@@ -22,6 +22,11 @@ namespace Core::FileSys {
 [[nodiscard]] std::filesystem::path OverlayPath(const std::filesystem::path& base,
                                                 std::string_view suffix);
 
+/// Update folders that may belong to a game, in order of preference: base + "-UPDATE",
+/// base + "-patch", then for a base named <title>-app, <title>-UPDATE and <title>-patch.
+[[nodiscard]] std::vector<std::filesystem::path> UpdatePathCandidates(
+    const std::filesystem::path& base);
+
 /// Inverse of OverlayPath.
 [[nodiscard]] std::optional<std::filesystem::path> BaseGameFromOverlay(
     const std::filesystem::path& path);
