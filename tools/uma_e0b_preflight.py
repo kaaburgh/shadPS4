@@ -180,7 +180,10 @@ def run_probe(args: argparse.Namespace) -> int:
                       "--json", str(out / "probe.json"), *flags]
         probe_rc = command(probe_args, out / "probe.log", env=env)
         if not (out / "probe.json").is_file():
-            raise RuntimeError("probe did not write JSON (return code %d)" % probe_rc)
+            # The reason, e.g. no matching Vulkan device, is only in the log.
+            lines = (out / "probe.log").read_text(errors="replace").strip().splitlines()
+            raise RuntimeError("probe did not write JSON (return code %d)%s" %
+                               (probe_rc, ": " + lines[-1].strip() if lines else ""))
         result = judge(json.loads((out / "probe.json").read_text()), args.mode)
         result["probe_returncode"] = probe_rc
         if probe_rc and result["verdict"] not in ("FAIL", "WRONG_DEVICE"):

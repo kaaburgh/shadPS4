@@ -24,7 +24,7 @@ sudo apt install -y git cmake build-essential libvulkan-dev linux-libc-dev \
 sudo apt install -y vulkan-validationlayers
 ~~~
 
-No root, kernel-module insertion, group change or sysctl modification is attempted by the runner. On RADV, missing /dev/udmabuf or insufficient access becomes a reported BLOCKED result rather than an apparent shared-memory success.
+No root, kernel-module insertion, group change or sysctl modification is attempted by the runner. On RADV, missing /dev/udmabuf or insufficient access becomes a reported BLOCKED result rather than an apparent shared-memory success. With no usable AMD device at all the probe writes no report, so the runner returns INFRA_FAIL and quotes the probe's last log line (for example `no matching Vulkan device`).
 
 ## Host-only unit checks (no Vulkan required)
 
