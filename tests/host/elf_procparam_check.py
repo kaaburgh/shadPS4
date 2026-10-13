@@ -53,9 +53,13 @@ def run_case(executable: pathlib.Path, name: str, image: pathlib.Path,
     ))
     # An intentionally incomplete synthetic ELF can fail at later startup
     # stages; only the early loader size check is the oracle here.
-    good = diagnostic == should_reject and not sanitizer
+    # Without this marker the valid control might have failed to reach the
+    # procparam reader at all, producing a misleading green result.
+    reached_guest_startup = "Starting shadps4 emulator" in log
+    good = (diagnostic == should_reject and not sanitizer and
+            (should_reject or reached_guest_startup))
     print(f"{name}: {'PASS' if good else 'FAIL'} reject={diagnostic} "
-          f"sanitizer={sanitizer} exit={ret}")
+          f"startup={reached_guest_startup} sanitizer={sanitizer} exit={ret}")
     if not good:
         print(log[-5000:], file=sys.stderr)
     return good
