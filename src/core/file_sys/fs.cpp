@@ -244,10 +244,11 @@ std::filesystem::path MntPoints::GetHostPath(std::string_view path, bool* is_rea
     const auto corrected_path_sanitized = RemoveTrailingSlashes(corrected_path);
     std::filesystem::path host_path = mount->host_path;
 
-    // Update folder is the first update candidate that exists, else mount + "-patch"
+    // Update folder is the first update candidate that is a folder or archive, as in Mount,
+    // else mount + "-patch"
     const auto updates = UpdatePathCandidates(mount->host_path);
     const auto update = std::ranges::find_if(
-        updates, [](const std::filesystem::path& p) { return std::filesystem::exists(p); });
+        updates, [](const std::filesystem::path& p) { return ResolveGameRoot(p).has_value(); });
     std::filesystem::path patch_path = update != updates.end() ? *update : updates[1];
 
     // Mods folder can only be at mount + "-mods"
