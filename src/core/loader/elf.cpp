@@ -478,6 +478,28 @@ std::string Elf::ElfPHeaderStr(u16 no) {
     return header;
 }
 
+u64 Elf::ReadProcParamSdkVersion() {
+    // The process parameters start with u64 size, u32 magic, u32 entry_count, u64 sdk_version.
+    // Only that field is read: the segment's size comes from the file, and newer SDKs' process
+    // parameters are larger than the fields shadPS4 knows.
+    constexpr u64 SdkVersionOffset = 16;
+    for (const auto& phdr : m_elf_phdr) {
+        if (phdr.p_type != PT_SCE_PROCPARAM) {
+            continue;
+        }
+        if (phdr.p_filesz < SdkVersionOffset + sizeof(u64)) {
+            LOG_WARNING(Loader, "PT_SCE_PROCPARAM segment too short for the SDK version: {:#x}",
+                        phdr.p_filesz);
+            return 0;
+        }
+        u64 sdk_version = 0;
+        LoadSegment(reinterpret_cast<u64>(&sdk_version), phdr.p_offset + SdkVersionOffset,
+                    sizeof(sdk_version));
+        return sdk_version;
+    }
+    return 0;
+}
+
 void Elf::LoadSegment(u64 virtual_addr, u64 file_offset, u64 size) {
     if (!is_self) {
         // It's elf file
