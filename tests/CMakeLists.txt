@@ -720,3 +720,18 @@ gtest_discover_tests(shadps4_patch_path_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DISCOVERY_TIMEOUT 60
 )
+
+# ===========================================================================
+# Audio output pacing tests (header-only, no emulator runtime)
+# ===========================================================================
+add_executable(shadps4_audio_pacer_test
+    audio/test_output_pacer.cpp
+)
+list(APPEND TEST_TARGETS shadps4_audio_pacer_test)
+target_include_directories(shadps4_audio_pacer_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_audio_pacer_test PRIVATE cxx_std_23)
+target_link_libraries(shadps4_audio_pacer_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(shadps4_audio_pacer_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_TIMEOUT 60
+)
