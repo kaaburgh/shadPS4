@@ -50,6 +50,9 @@ s32 PS4_SYSV_ABI scePlayGoGetChunkId(OrbisPlayGoHandle handle, OrbisPlayGoChunkI
     if (outChunkIdList != nullptr && numberOfEntries == 0) {
         return ORBIS_PLAYGO_ERROR_BAD_SIZE;
     }
+    if (!playgo) {
+        return ORBIS_PLAYGO_ERROR_NOT_INITIALIZED;
+    }
 
     if (playgo->GetPlaygoHeader().file_size == 0) {
         *outEntries = 0;
@@ -236,6 +239,9 @@ u64 scePlayGoConvertLanguage(u64 systemLang) {
 }
 
 s32 PS4_SYSV_ABI scePlayGoInitialize(OrbisPlayGoInitParams* param) {
+    if (param == nullptr) {
+        return ORBIS_PLAYGO_ERROR_BAD_POINTER;
+    }
     LOG_INFO(Lib_PlayGo, "called, bufSize = {}", param->bufSize);
     if (param->bufAddr == nullptr) {
         return ORBIS_PLAYGO_ERROR_BAD_POINTER;

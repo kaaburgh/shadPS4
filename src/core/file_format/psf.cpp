@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cstring>
 #include <ranges>
+#include <utility>
 
 #include "common/assert.h"
 #include "common/io_file.h"
@@ -38,11 +39,17 @@ bool PSF::Open(const std::filesystem::path& filepath) {
     }
 
     const u64 psfSize = file.GetSize();
-    ASSERT_MSG(psfSize != 0, "SFO file at {} is empty!", filepath.string());
+    if (psfSize == 0) {
+        LOG_ERROR(Core, "Empty PSF file: {}", filepath.string());
+        return false;
+    }
     std::vector<u8> psf(psfSize);
     file.Seek(0);
-    file.Read(psf);
+    const auto read_size = file.Read(psf);
     file.Close();
+    if (read_size != psf.size()) {
+        return false;
+    }
     return Open(psf);
 }
 
@@ -55,16 +62,18 @@ bool PSF::Open(const std::unique_ptr<Core::FileSys::IFile>& file) {
 }
 
 bool PSF::Open(const std::vector<u8>& psf_buffer) {
-    const u8* psf_data = psf_buffer.data();
-
     entry_list.clear();
     map_binaries.clear();
     map_strings.clear();
     map_integers.clear();
 
-    // Parse file contents
+    const auto size = psf_buffer.size();
+    if (size < sizeof(PSFHeader)) {
+        return false;
+    }
+    const auto* data = psf_buffer.data();
     PSFHeader header{};
-    std::memcpy(&header, psf_data, sizeof(header));
+    std::memcpy(&header, data, sizeof(header));
 
     if (header.magic != PSF_MAGIC) {
         LOG_ERROR(Core, "Invalid PSF magic number");
@@ -75,37 +84,91 @@ bool PSF::Open(const std::vector<u8>& psf_buffer) {
         return false;
     }
 
-    for (u32 i = 0; i < header.index_table_entries; i++) {
-        PSFRawEntry raw_entry{};
-        std::memcpy(&raw_entry, psf_data + sizeof(PSFHeader) + i * sizeof(PSFRawEntry),
-                    sizeof(raw_entry));
+    // Validate the index table before converting its count into pointer offsets.
+    const size_t count = header.index_table_entries;
+    if (count > (size - sizeof(PSFHeader)) / sizeof(PSFRawEntry)) {
+        return false;
+    }
+    const size_t table_end = sizeof(PSFHeader) + count * sizeof(PSFRawEntry);
+    const size_t key_start = header.key_table_offset;
+    const size_t value_start = header.data_table_offset;
+    if (key_start < table_end || key_start > value_start || value_start > size) {
+        return false;
+    }
 
-        Entry& entry = entry_list.emplace_back();
-        entry.key = std::string{(char*)(psf_data + header.key_table_offset + raw_entry.key_offset)};
-        entry.param_fmt = static_cast<PSFEntryFmt>(raw_entry.param_fmt.Raw());
-        entry.max_len = raw_entry.param_max_len;
+    std::vector<Entry> parsed_entries;
+    decltype(map_binaries) parsed_binaries;
+    decltype(map_strings) parsed_strings;
+    decltype(map_integers) parsed_integers;
 
-        const u8* data = psf_data + header.data_table_offset + raw_entry.data_offset;
+    for (size_t i = 0; i < count; ++i) {
+        PSFRawEntry raw{};
+        std::memcpy(&raw, data + sizeof(PSFHeader) + i * sizeof(raw), sizeof(raw));
 
-        switch (entry.param_fmt) {
+        // Both offsets are relative to their respective table; subtract first
+        // so that invalid offsets cannot overflow when added to the base.
+        const size_t key_relative = raw.key_offset;
+        if (key_relative >= value_start - key_start) {
+            return false;
+        }
+        const size_t key_offset = key_start + key_relative;
+        const char* key = reinterpret_cast<const char*>(data + key_offset);
+        const auto* key_end =
+            static_cast<const char*>(std::memchr(key, 0, value_start - key_offset));
+        if (!key_end) {
+            return false;
+        }
+
+        const size_t value_relative = raw.data_offset;
+        if (value_relative > size - value_start) {
+            return false;
+        }
+        const size_t value_offset = value_start + value_relative;
+        const size_t value_size = raw.param_len;
+        if (value_size > size - value_offset || value_size > raw.param_max_len) {
+            return false;
+        }
+
+        const auto format = static_cast<PSFEntryFmt>(raw.param_fmt.Raw());
+        const size_t index = parsed_entries.size();
+        parsed_entries.push_back({std::string(key, key_end), format, raw.param_max_len});
+        const u8* value = data + value_offset;
+
+        switch (format) {
         case PSFEntryFmt::Binary: {
-            std::vector<u8> value(raw_entry.param_len);
-            std::memcpy(value.data(), data, raw_entry.param_len);
-            map_binaries.emplace(i, std::move(value));
-        } break;
+            parsed_binaries.emplace(index, std::vector<u8>(value, value + value_size));
+            break;
+        }
         case PSFEntryFmt::Text: {
-            std::string c_str{reinterpret_cast<const char*>(data)};
-            map_strings.emplace(i, std::move(c_str));
-        } break;
+            if (value_size == 0) {
+                return false;
+            }
+            const char* text = reinterpret_cast<const char*>(value);
+            const auto* terminator = static_cast<const char*>(std::memchr(text, 0, value_size));
+            if (!terminator) {
+                return false;
+            }
+            parsed_strings.emplace(index, std::string(text, terminator));
+            break;
+        }
         case PSFEntryFmt::Integer: {
-            ASSERT_MSG(raw_entry.param_len == sizeof(s32), "PSF integer entry size mismatch");
-            s32 integer = *(s32*)data;
-            map_integers.emplace(i, integer);
-        } break;
+            if (value_size != sizeof(s32)) {
+                return false;
+            }
+            s32 number{};
+            std::memcpy(&number, value, sizeof(number));
+            parsed_integers.emplace(index, number);
+            break;
+        }
         default:
-            UNREACHABLE_MSG("Unknown PSF entry format");
+            return false;
         }
     }
+
+    entry_list = std::move(parsed_entries);
+    map_binaries = std::move(parsed_binaries);
+    map_strings = std::move(parsed_strings);
+    map_integers = std::move(parsed_integers);
     return true;
 }
 

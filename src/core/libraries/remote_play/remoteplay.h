@@ -10,6 +10,9 @@ namespace Core::Loader {
 class SymbolsResolver;
 }
 
+// Returned for a bad argument on PS5 firmware; the SDK name of this code is not public.
+constexpr int ORBIS_REMOTEPLAY_ERROR_INVALID_ARGUMENT = 0x80FC0001;
+
 // returning codes in sceRemoteplayGetConnectionStatus pstatus
 constexpr int ORBIS_REMOTEPLAY_CONNECTION_STATUS_DISCONNECT = 0;
 constexpr int ORBIS_REMOTEPLAY_CONNECTION_STATUS_CONNECT = 1;
