@@ -338,3 +338,50 @@ gtest_discover_tests(shadps4_http_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DISCOVERY_TIMEOUT 60
 )
+
+
+# PSF/SFO bounds tests: synthetic metadata only, no PS4 guest or game data.
+add_executable(shadps4_psf_test
+    ${CMAKE_SOURCE_DIR}/src/core/file_format/psf.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/io_file.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/path_util.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/assert.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/error.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/string_util.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/logging/log.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/ntapi.cpp
+    stubs/common_stub.cpp
+    stubs/core_stub.cpp
+    stubs/signals_stub.cpp
+    stubs/file_sys_stub.cpp
+    stubs/scm_rev_stub.cpp
+    stubs/sdl_stub.cpp
+    file_format/test_psf_bounds.cpp
+)
+target_include_directories(shadps4_psf_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}
+)
+target_compile_features(shadps4_psf_test PRIVATE cxx_std_23)
+target_compile_definitions(shadps4_psf_test PRIVATE BOOST_ASIO_STANDALONE)
+target_link_libraries(shadps4_psf_test PRIVATE
+    GTest::gtest_main fmt::fmt spdlog::spdlog
+    nlohmann_json::nlohmann_json toml11::toml11 SDL3::SDL3
+)
+if (WIN32)
+    target_link_libraries(shadps4_psf_test PRIVATE onecore)
+    target_compile_definitions(shadps4_psf_test PRIVATE
+        NOMINMAX WIN32_LEAN_AND_MEAN
+        NTDDI_VERSION=0x0A000006 _WIN32_WINNT=0x0A00 WINVER=0x0A00
+    )
+    if (MSVC)
+        target_compile_definitions(shadps4_psf_test PRIVATE
+            _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_DEPRECATE
+            _SCL_SECURE_NO_WARNINGS _TIMESPEC_DEFINED
+        )
+    endif()
+endif()
+gtest_discover_tests(shadps4_psf_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_TIMEOUT 60
+)
