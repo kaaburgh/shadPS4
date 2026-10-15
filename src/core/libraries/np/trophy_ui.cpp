@@ -27,8 +27,73 @@ namespace Libraries::Np::NpTrophy {
 std::optional<TrophyUI> current_trophy_ui;
 std::queue<TrophyInfo> trophy_queue;
 std::mutex queueMtx;
+
+// Draws the current popup. AddTrophyToQueue replaces or destroys the popup on the guest thread,
+// so the render thread only calls into this layer, which lives for the whole run, and it reaches
+// the popup under queueMtx.
+class TrophyLayer final : public ImGui::Layer {
+public:
+    void Draw() override {
+        std::lock_guard lock(queueMtx);
+        if (current_trophy_ui) {
+            current_trophy_ui->Draw();
+        }
+    }
+
+    bool ShouldKeepDrawing() override {
+        std::lock_guard lock(queueMtx);
+        return current_trophy_ui.has_value();
+    }
+};
+
+TrophyLayer trophy_layer;
+std::once_flag trophy_layer_added;
 std::string side = "right";
 double trophy_timer;
+
+// The popups share one audio device, opened with the first popup and kept for the rest of the
+// run. Closing a device with each popup can block the guest thread that unlocks the next trophy
+// for tens of milliseconds.
+static SDL_AudioDeviceID OpenTrophyAudioDevice() {
+    // SDL counts subsystem references: this one is held as long as the device.
+    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) {
+        LOG_ERROR(Lib_NpTrophy, "Unable to init SDL Audio for trophy sound: {}", SDL_GetError());
+        return 0;
+    }
+
+    // Play on the same device as the game's audio backend.
+    SDL_AudioDeviceID device_id = SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK;
+    std::string main_device;
+    size_t name_prefix = 0;
+    if (EmulatorSettings.GetAudioBackend() == 0) {
+        main_device = EmulatorSettings.GetSDLMainOutputDevice();
+    } else if (EmulatorSettings.GetAudioBackend() == 1) {
+        main_device = EmulatorSettings.GetOpenALMainOutputDevice();
+        // Device names are the same for openAl/Sdl, just with an added prefix
+        name_prefix = 15;
+    }
+    if (!main_device.empty() && main_device != "Default Device") {
+        int count = 0;
+        SDL_AudioDeviceID* devices = SDL_GetAudioPlaybackDevices(&count);
+        for (int i = 0; i < count; i++) {
+            std::string name = SDL_GetAudioDeviceName(devices[i]);
+            name.erase(0, name_prefix);
+            if (name == main_device) {
+                device_id = devices[i];
+                break;
+            }
+        }
+        SDL_free(devices);
+    }
+
+    const SDL_AudioDeviceID device = SDL_OpenAudioDevice(device_id, nullptr);
+    if (device == 0) {
+        LOG_ERROR(Lib_NpTrophy, "Unable to open audio device for trophy sound playback: {}",
+                  SDL_GetError());
+        SDL_QuitSubSystem(SDL_INIT_AUDIO);
+    }
+    return device;
+}
 
 TrophyUI::TrophyUI(const std::filesystem::path& trophyIconPath, const std::string& trophyName,
                    const std::string_view& rarity)
@@ -86,52 +151,13 @@ TrophyUI::TrophyUI(const std::filesystem::path& trophyIconPath, const std::strin
 
     trophy_type_icon = RefCountedTexture::DecodePngTexture(imgdata);
 
-    AddLayer(this);
-
-    if (SDL_WasInit(SDL_INIT_AUDIO) != 0) {
-        if (!SDL_Init(SDL_INIT_AUDIO)) {
-            LOG_ERROR(Lib_NpTrophy, "Unable to init SDL Audio for trophy sound: {}",
-                      SDL_GetError());
-            return;
-        }
+    // Popups are created and destroyed under queueMtx, so this needs no lock of its own.
+    static SDL_AudioDeviceID shared_audio_device = 0;
+    if (shared_audio_device == 0) {
+        shared_audio_device = OpenTrophyAudioDevice();
     }
-
-    audioDevice = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, nullptr);
-
-    // user selected Sdl Backend, use same device as Sdl main Device
-    if (EmulatorSettings.GetAudioBackend() == 0) {
-        if (EmulatorSettings.GetSDLMainOutputDevice() != "Default Device") {
-            int count;
-            SDL_AudioDeviceID* devices = SDL_GetAudioPlaybackDevices(&count);
-
-            for (int i = 0; i < count; i++) {
-                std::string name = SDL_GetAudioDeviceName(devices[i]);
-                if (name == EmulatorSettings.GetSDLMainOutputDevice()) {
-                    audioDevice = SDL_OpenAudioDevice(devices[i], NULL);
-                }
-            }
-        }
-
-        // user selected OpenAl Backend, use same device as OpenAl main Device
-    } else if (EmulatorSettings.GetAudioBackend() == 1) {
-        if (EmulatorSettings.GetOpenALMainOutputDevice() != "Default Device") {
-            int count;
-            SDL_AudioDeviceID* devices = SDL_GetAudioPlaybackDevices(&count);
-
-            for (int i = 0; i < count; i++) {
-                std::string name = SDL_GetAudioDeviceName(devices[i]);
-                // Device names are the same for openAl/Sdl, just with an added prefix
-                name.erase(0, 15);
-                if (name == EmulatorSettings.GetOpenALMainOutputDevice()) {
-                    audioDevice = SDL_OpenAudioDevice(devices[i], NULL);
-                }
-            }
-        }
-    }
-
+    audioDevice = shared_audio_device;
     if (audioDevice == 0) {
-        LOG_ERROR(Lib_NpTrophy, "Unable to open audio device for trophy sound playback: {}",
-                  SDL_GetError());
         return;
     }
 
@@ -162,18 +188,6 @@ TrophyUI::~TrophyUI() {
     if (stream) {
         SDL_DestroyAudioStream(stream);
     }
-
-    // if emulator is not using sdl audio backend
-    if (EmulatorSettings.GetAudioBackend() != 0) {
-        SDL_CloseAudioDevice(audioDevice);
-        SDL_QuitSubSystem(SDL_INIT_AUDIO);
-    }
-
-    Finish();
-}
-
-void TrophyUI::Finish() {
-    RemoveLayer(this);
 }
 
 float fade_opacity = 0.0f;                 // Initial opacity (invisible)
@@ -306,8 +320,9 @@ void TrophyUI::Draw() {
 
     PopStyleVar();
 
+    // TrophyLayer::Draw holds queueMtx. Replacing or resetting current_trophy_ui destroys this
+    // popup, so nothing may touch it afterwards.
     if (trophy_timer <= 0) {
-        std::lock_guard<std::mutex> lock(queueMtx);
         if (!trophy_queue.empty()) {
             TrophyInfo next_trophy = trophy_queue.front();
             trophy_queue.pop();
@@ -367,7 +382,7 @@ void TrophyUI::PlayWav(std::vector<unsigned char> wavData) {
         return;
     }
 
-    SDL_AudioStream* stream = SDL_CreateAudioStream(&spec, &spec);
+    stream = SDL_CreateAudioStream(&spec, &spec);
     SDL_BindAudioStream(audioDevice, stream);
 
     // make this louder than game stream
@@ -383,7 +398,9 @@ void AddTrophyToQueue(const std::filesystem::path& trophyIconPath, const std::st
 
     if (EmulatorSettings.IsTrophyPopupDisabled()) {
         return;
-    } else if (current_trophy_ui.has_value()) {
+    }
+    std::call_once(trophy_layer_added, [] { ImGui::Layer::AddLayer(&trophy_layer); });
+    if (current_trophy_ui.has_value()) {
         current_trophy_ui.reset();
     }
 

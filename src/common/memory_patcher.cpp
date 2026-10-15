@@ -14,6 +14,7 @@
 #include "core/emulator_state.h"
 #include "core/file_format/psf.h"
 #include "memory_patcher.h"
+#include "patch_path.h"
 
 namespace MemoryPatcher {
 
@@ -223,12 +224,14 @@ void ApplyPatchesFromXML(std::filesystem::path path) {
 void OnGameLoaded() {
     std::filesystem::path patch_dir = Common::FS::GetUserPath(Common::FS::PathType::PatchesDir);
     if (!patch_file.empty()) {
-
-        auto file_path = (patch_dir / patch_file).native();
-        if (std::filesystem::exists(patch_file)) {
-            ApplyPatchesFromXML(patch_file);
+        const auto lookup = ResolveExplicitPatchPath(patch_dir, patch_file);
+        if (lookup.ambiguous) {
+            LOG_ERROR(Loader, "Patch '{}' appears in multiple provider folders; specify its path",
+                      patch_file);
+        } else if (lookup.path.empty()) {
+            LOG_ERROR(Loader, "Could not find explicitly requested patch '{}'", patch_file);
         } else {
-            ApplyPatchesFromXML(file_path);
+            ApplyPatchesFromXML(lookup.path);
         }
     } else if (EmulatorState::GetInstance()->IsAutoPatchesLoadEnabled()) {
         for (auto const& repo : std::filesystem::directory_iterator(patch_dir)) {

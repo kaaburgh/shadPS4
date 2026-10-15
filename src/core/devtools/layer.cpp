@@ -97,6 +97,10 @@ void L::DrawMenuBar() {
             auto& pp_settings = presenter->GetPPSettingsRef();
             if (BeginMenu("Brightness")) {
                 SliderFloat("Gamma", &pp_settings.gamma, 0.1f, 2.0f);
+                bool rec709 = pp_settings.rec709 != 0;
+                if (Checkbox("Rec.709 curve", &rec709)) {
+                    pp_settings.rec709 = rec709 ? 1 : 0;
+                }
                 ImGui::EndMenu();
             }
             if (BeginMenu("FSR")) {

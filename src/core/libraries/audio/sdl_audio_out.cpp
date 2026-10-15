@@ -85,11 +85,13 @@ public:
         convert(ptr, internal_buffer, buffer_frames, nullptr);
         HandleTiming(current_time);
 
-        if ((output_count++ & 0xF) == 0) { // Check every 16 outputs
-            ManageAudioQueue();
-        }
-
-        if (!SDL_PutAudioStreamData(stream, internal_buffer, internal_buffer_size)) [[unlikely]] {
+        // When the device falls behind, drop this buffer rather than the whole queue: latency
+        // stays bounded by the threshold and each dropout is one buffer long.
+        const int queued = SDL_GetAudioStreamQueued(stream);
+        if (queued >= static_cast<int>(queue_threshold)) [[unlikely]] {
+            LOG_DEBUG(Lib_AudioOut, "Dropping audio buffer, queue backed up ({} >= {})", queued,
+                      queue_threshold);
+        } else if (!SDL_PutAudioStreamData(stream, internal_buffer, internal_buffer_size)) {
             LOG_ERROR(Lib_AudioOut, "Failed to output to SDL audio stream: {}", SDL_GetError());
         }
 
@@ -219,17 +221,6 @@ private:
         const u64 wait_us = pacer.OnOutput(current_time);
         if (wait_us != 0) {
             std::this_thread::sleep_for(std::chrono::microseconds(wait_us));
-        }
-    }
-
-    void ManageAudioQueue() {
-        const auto queued = SDL_GetAudioStreamQueued(stream);
-
-        if (queued >= queue_threshold) [[unlikely]] {
-            LOG_DEBUG(Lib_AudioOut, "Clearing backed up audio queue ({} >= {})", queued,
-                      queue_threshold);
-            SDL_ClearAudioStream(stream);
-            CalculateQueueThreshold();
         }
     }
 
@@ -615,7 +606,6 @@ private:
     alignas(64) std::atomic<u64> last_output_time{0};
     OutputPacer pacer;
     u64 last_volume_check_time{0};
-    u32 output_count{0};
 
     // Buffers
     u32 internal_buffer_size{0};

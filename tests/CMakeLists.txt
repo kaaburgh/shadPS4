@@ -557,6 +557,171 @@ target_link_libraries(shadps4_net_kernel_test PRIVATE
 )
 
 # ===========================================================================
+# Loader tests (ELF process parameters)
+# ===========================================================================
+set(LOADER_TEST_SOURCES
+    # Under test
+    ${CMAKE_SOURCE_DIR}/src/core/loader/elf.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/file_sys/backends/host_fs.cpp
+
+    # Minimal common support
+    ${CMAKE_SOURCE_DIR}/src/core/emulator_settings.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/emulator_state.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/path_util.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/assert.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/error.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/io_file.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/ntapi.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/string_util.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/logging/classes.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/logging/log.cpp
+
+    # Stubs that replace dependencies
+    stubs/common_stub.cpp
+    stubs/core_stub.cpp
+    stubs/signals_stub.cpp
+    stubs/file_sys_stub.cpp
+    stubs/scm_rev_stub.cpp
+    stubs/sdl_stub.cpp
+
+    # Tests
+    loader/test_elf_procparam.cpp
+)
+
+add_executable(shadps4_loader_test ${LOADER_TEST_SOURCES})
+list(APPEND TEST_TARGETS shadps4_loader_test)
+
+target_include_directories(shadps4_loader_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}
+)
+target_compile_features(shadps4_loader_test PRIVATE cxx_std_23)
+target_compile_definitions(shadps4_loader_test PRIVATE BOOST_ASIO_STANDALONE)
+target_link_libraries(shadps4_loader_test PRIVATE
+    GTest::gtest_main
+    fmt::fmt
+    nlohmann_json::nlohmann_json
+    toml11::toml11
+    SDL3::SDL3
+    spdlog::spdlog
+    tsl::robin_map
+)
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+    CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    include(CheckCXXSymbolExists)
+    check_cxx_symbol_exists(_LIBCPP_VERSION version LIBCPP)
+    if (LIBCPP)
+        target_compile_options(shadps4_loader_test PRIVATE -fexperimental-library)
+    endif()
+endif()
+
+if (WIN32)
+    target_link_libraries(shadps4_loader_test PRIVATE onecore)
+    target_compile_definitions(shadps4_loader_test PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+        NTDDI_VERSION=0x0A000006
+        _WIN32_WINNT=0x0A00
+        WINVER=0x0A00
+    )
+endif()
+
+gtest_discover_tests(shadps4_loader_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_TIMEOUT 60
+)
+
+# ===========================================================================
+# PSF (param.sfo) parser tests: generated metadata only
+# ===========================================================================
+set(PSF_TEST_SOURCES
+    # Under test
+    ${CMAKE_SOURCE_DIR}/src/core/file_format/psf.cpp
+
+    # Minimal common support
+    ${CMAKE_SOURCE_DIR}/src/core/emulator_settings.cpp
+    ${CMAKE_SOURCE_DIR}/src/core/emulator_state.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/path_util.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/assert.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/error.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/io_file.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/ntapi.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/string_util.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/logging/classes.cpp
+    ${CMAKE_SOURCE_DIR}/src/common/logging/log.cpp
+
+    # Stubs that replace dependencies
+    stubs/common_stub.cpp
+    stubs/core_stub.cpp
+    stubs/signals_stub.cpp
+    stubs/file_sys_stub.cpp
+    stubs/scm_rev_stub.cpp
+    stubs/sdl_stub.cpp
+
+    # Tests
+    file_format/test_psf_bounds.cpp
+)
+
+add_executable(shadps4_psf_test ${PSF_TEST_SOURCES})
+list(APPEND TEST_TARGETS shadps4_psf_test)
+
+target_include_directories(shadps4_psf_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}
+)
+target_compile_features(shadps4_psf_test PRIVATE cxx_std_23)
+target_compile_definitions(shadps4_psf_test PRIVATE BOOST_ASIO_STANDALONE)
+target_link_libraries(shadps4_psf_test PRIVATE
+    GTest::gtest_main
+    fmt::fmt
+    nlohmann_json::nlohmann_json
+    toml11::toml11
+    SDL3::SDL3
+    spdlog::spdlog
+)
+
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
+    CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    include(CheckCXXSymbolExists)
+    check_cxx_symbol_exists(_LIBCPP_VERSION version LIBCPP)
+    if (LIBCPP)
+        target_compile_options(shadps4_psf_test PRIVATE -fexperimental-library)
+    endif()
+endif()
+
+if (WIN32)
+    target_link_libraries(shadps4_psf_test PRIVATE onecore)
+    target_compile_definitions(shadps4_psf_test PRIVATE
+        NOMINMAX
+        WIN32_LEAN_AND_MEAN
+        NTDDI_VERSION=0x0A000006
+        _WIN32_WINNT=0x0A00
+        WINVER=0x0A00
+    )
+endif()
+
+gtest_discover_tests(shadps4_psf_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_TIMEOUT 60
+)
+
+# ===========================================================================
+# Patch path lookup tests (header-only, no emulator runtime)
+# ===========================================================================
+add_executable(shadps4_patch_path_test
+    common/test_patch_path.cpp
+)
+list(APPEND TEST_TARGETS shadps4_patch_path_test)
+target_include_directories(shadps4_patch_path_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_patch_path_test PRIVATE cxx_std_23)
+target_link_libraries(shadps4_patch_path_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(shadps4_patch_path_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_TIMEOUT 60
+)
+
+# ===========================================================================
 # Audio output pacing tests (header-only, no emulator runtime)
 # ===========================================================================
 add_executable(shadps4_audio_pacer_test
