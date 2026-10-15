@@ -56,6 +56,9 @@ int PS4_SYSV_ABI sceRemoteplayGetConnectHistory() {
 
 int PS4_SYSV_ABI sceRemoteplayGetConnectionStatus(
     Libraries::UserService::OrbisUserServiceUserId userId, int* pStatus) {
+    if (pStatus == nullptr) {
+        return ORBIS_REMOTEPLAY_ERROR_INVALID_ARGUMENT;
+    }
     *pStatus = ORBIS_REMOTEPLAY_CONNECTION_STATUS_DISCONNECT;
     return ORBIS_OK;
 }

@@ -121,6 +121,11 @@ WindowSDL::WindowSDL(s32 width_, s32 height_, Input::GameControllers* controller
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, width);
     SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, height);
     SDL_SetNumberProperty(props, "flags", SDL_WINDOW_VULKAN);
+    // Without high pixel density, a Wayland window's buffer has the output's logical size, so
+    // full screen on a 4K output at 200 % scale rendered at 1080p. The swapchain already follows
+    // the window's size in pixels.
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN,
+                           SDL_strcmp(SDL_GetCurrentVideoDriver(), "wayland") == 0);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
     // Creating the window directly in fullscreen avoids a visible windowed -> fullscreen
     // transition on startup. SDL sizes the window to the display and keeps the requested
@@ -219,6 +224,7 @@ void WindowSDL::WaitEvent() {
 
     switch (event.type) {
     case SDL_EVENT_WINDOW_RESIZED:
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
     case SDL_EVENT_WINDOW_MAXIMIZED:
     case SDL_EVENT_WINDOW_RESTORED:
     case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:

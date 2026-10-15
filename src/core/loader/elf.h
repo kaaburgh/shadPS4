@@ -503,6 +503,9 @@ public:
     std::string ElfPheaderFlagsStr(u32 flags);
 
     void LoadSegment(u64 virtual_addr, u64 file_offset, u64 size);
+    /// The SDK version in the PT_SCE_PROCPARAM segment, or 0 if there is no such segment or it
+    /// is too short to hold one.
+    u64 ReadProcParamSdkVersion();
     bool IsSharedLib();
     void ElfHeaderDebugDump(const std::filesystem::path& file_name);
     void SelfHeaderDebugDump(const std::filesystem::path& file_name);
