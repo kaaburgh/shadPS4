@@ -338,3 +338,16 @@ gtest_discover_tests(shadps4_http_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DISCOVERY_TIMEOUT 60
 )
+
+
+# Standalone patch-provider path resolution checks (no emulator/game runtime).
+add_executable(shadps4_patch_path_test
+    common/test_patch_path.cpp
+)
+target_compile_features(shadps4_patch_path_test PRIVATE cxx_std_23)
+target_include_directories(shadps4_patch_path_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(shadps4_patch_path_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(shadps4_patch_path_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_TIMEOUT 60
+)
