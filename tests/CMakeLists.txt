@@ -705,3 +705,18 @@ gtest_discover_tests(shadps4_psf_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     DISCOVERY_TIMEOUT 60
 )
+
+# ===========================================================================
+# Patch path lookup tests (header-only, no emulator runtime)
+# ===========================================================================
+add_executable(shadps4_patch_path_test
+    common/test_patch_path.cpp
+)
+list(APPEND TEST_TARGETS shadps4_patch_path_test)
+target_include_directories(shadps4_patch_path_test PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_features(shadps4_patch_path_test PRIVATE cxx_std_23)
+target_link_libraries(shadps4_patch_path_test PRIVATE GTest::gtest_main)
+gtest_discover_tests(shadps4_patch_path_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    DISCOVERY_TIMEOUT 60
+)
