@@ -270,6 +270,15 @@ OrbisNpTrophyGrade GetTrophyGradeFromChar(char trophyType) {
     }
 }
 
+// Zeroes a query's output struct except the size the caller set, so a query
+// that cannot read the trophy data returns zeros rather than stale memory.
+template <typename T>
+static void ClearOutput(T* out) {
+    const auto size = out->size;
+    *out = {};
+    out->size = size;
+}
+
 s32 PS4_SYSV_ABI sceNpTrophyCreateContext(OrbisNpTrophyContext* context,
                                           Libraries::UserService::OrbisUserServiceUserId user_id,
                                           uint32_t service_label, u64 options) {
@@ -436,6 +445,9 @@ int PS4_SYSV_ABI sceNpTrophyGetGameInfo(OrbisNpTrophyContext context, OrbisNpTro
     const auto& trophy_file = ctx.trophy_xml_path;
     const auto& trophy_save_file = ctx.xml_save_file;
 
+    ClearOutput(details);
+    ClearOutput(data);
+
     pugi::xml_document doc;
     pugi::xml_parse_result result = doc.load_file(trophy_file.native().c_str());
 
@@ -451,12 +463,12 @@ int PS4_SYSV_ABI sceNpTrophyGetGameInfo(OrbisNpTrophyContext context, OrbisNpTro
         std::string_view node_name = node.name();
 
         if (node_name == "title-name") {
-            strncpy(details->title, node.text().as_string(), ORBIS_NP_TROPHY_GAME_TITLE_MAX_SIZE);
+            strncpy(details->title, node.text().as_string(), sizeof(details->title) - 1);
         }
 
         if (node_name == "title-detail") {
             strncpy(details->description, node.text().as_string(),
-                    ORBIS_NP_TROPHY_GAME_DESCR_MAX_SIZE);
+                    sizeof(details->description) - 1);
         }
 
         if (node_name == "group")
@@ -467,7 +479,7 @@ int PS4_SYSV_ABI sceNpTrophyGetGameInfo(OrbisNpTrophyContext context, OrbisNpTro
     pugi::xml_parse_result save_result = save_doc.load_file(ctx.xml_save_file.native().c_str());
 
     if (!save_result) {
-        LOG_ERROR(Lib_NpTrophy, "Failed to parse user trophy xml : {}", result.description());
+        LOG_ERROR(Lib_NpTrophy, "Failed to parse user trophy xml : {}", save_result.description());
         return ORBIS_OK;
     }
     auto save_trophyconf = save_doc.child("trophyconf");
@@ -553,6 +565,11 @@ int PS4_SYSV_ABI sceNpTrophyGetGroupInfo(OrbisNpTrophyContext context, OrbisNpTr
         return ORBIS_NP_TROPHY_ERROR_NOT_REGISTERED;
     const auto& trophy_file = ctx.trophy_xml_path;
 
+    ClearOutput(details);
+    ClearOutput(data);
+    details->group_id = groupId;
+    data->group_id = groupId;
+
     pugi::xml_document doc;
     pugi::xml_parse_result result = doc.load_file(trophy_file.native().c_str());
 
@@ -575,23 +592,19 @@ int PS4_SYSV_ABI sceNpTrophyGetGroupInfo(OrbisNpTrophyContext context, OrbisNpTr
                     std::string_view current_group_description =
                         node.child("detail").text().as_string();
 
-                    strncpy(details->title, current_group_name.data(),
-                            ORBIS_NP_TROPHY_GROUP_TITLE_MAX_SIZE);
+                    strncpy(details->title, current_group_name.data(), sizeof(details->title) - 1);
                     strncpy(details->description, current_group_description.data(),
-                            ORBIS_NP_TROPHY_GAME_DESCR_MAX_SIZE);
+                            sizeof(details->description) - 1);
                 }
             }
         }
-
-        details->group_id = groupId;
-        data->group_id = groupId;
     }
 
     pugi::xml_document save_doc;
     pugi::xml_parse_result save_result = save_doc.load_file(ctx.xml_save_file.native().c_str());
 
     if (!save_result) {
-        LOG_ERROR(Lib_NpTrophy, "Failed to parse user trophy xml : {}", result.description());
+        LOG_ERROR(Lib_NpTrophy, "Failed to parse user trophy xml : {}", save_result.description());
         return ORBIS_OK;
     }
     auto save_trophyconf = save_doc.child("trophyconf");
@@ -742,6 +755,9 @@ int PS4_SYSV_ABI sceNpTrophyGetTrophyInfo(OrbisNpTrophyContext context, OrbisNpT
         return ORBIS_NP_TROPHY_ERROR_NOT_REGISTERED;
     const auto& trophy_file = ctx.trophy_xml_path;
 
+    ClearOutput(details);
+    ClearOutput(data);
+
     pugi::xml_document doc;
     pugi::xml_parse_result result = doc.load_file(trophy_file.native().c_str());
 
@@ -762,9 +778,9 @@ int PS4_SYSV_ABI sceNpTrophyGetTrophyInfo(OrbisNpTrophyContext context, OrbisNpT
                 std::string_view current_trophy_description =
                     node.child("detail").text().as_string();
 
-                strncpy(details->name, current_trophy_name.data(), ORBIS_NP_TROPHY_NAME_MAX_SIZE);
+                strncpy(details->name, current_trophy_name.data(), sizeof(details->name) - 1);
                 strncpy(details->description, current_trophy_description.data(),
-                        ORBIS_NP_TROPHY_DESCR_MAX_SIZE);
+                        sizeof(details->description) - 1);
             }
         }
     }
@@ -773,7 +789,7 @@ int PS4_SYSV_ABI sceNpTrophyGetTrophyInfo(OrbisNpTrophyContext context, OrbisNpT
     pugi::xml_parse_result save_result = save_doc.load_file(ctx.xml_save_file.native().c_str());
 
     if (!save_result) {
-        LOG_ERROR(Lib_NpTrophy, "Failed to parse user trophy xml : {}", result.description());
+        LOG_ERROR(Lib_NpTrophy, "Failed to parse user trophy xml : {}", save_result.description());
         return ORBIS_OK;
     }
     auto save_trophyconf = save_doc.child("trophyconf");
@@ -791,7 +807,9 @@ int PS4_SYSV_ABI sceNpTrophyGetTrophyInfo(OrbisNpTrophyContext context, OrbisNpT
                 bool current_trophy_hidden = node.attribute("hidden").as_bool();
 
                 details->trophy_id = trophyId;
-                details->trophy_grade = GetTrophyGradeFromChar(current_trophy_grade.at(0));
+                details->trophy_grade = current_trophy_grade.empty()
+                                            ? ORBIS_NP_TROPHY_GRADE_UNKNOWN
+                                            : GetTrophyGradeFromChar(current_trophy_grade[0]);
                 details->group_id = current_trophy_groupid;
                 details->hidden = current_trophy_hidden;
 
