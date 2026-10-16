@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <array>
 #include <chrono>
+#include <string_view>
 
 #include "common/logging/log.h"
 #include "core/libraries/kernel/kernel.h"
@@ -699,45 +701,72 @@ int PS4_SYSV_ABI sceRtcIsLeapYear(int yearInt) {
     return (ymdl.day() == 29d);
 }
 
-int GetMonthFromString(std::string monthStr) {
-    if (monthStr == "Jan")
-        return 1;
+namespace {
 
-    if (monthStr == "Feb")
-        return 2;
-
-    if (monthStr == "Mar")
-        return 3;
-
-    if (monthStr == "Apr")
-        return 4;
-
-    if (monthStr == "May")
-        return 5;
-
-    if (monthStr == "Jun")
-        return 6;
-
-    if (monthStr == "Jul")
-        return 7;
-
-    if (monthStr == "Aug")
-        return 8;
-
-    if (monthStr == "Sep")
-        return 9;
-
-    if (monthStr == "Oct")
-        return 10;
-
-    if (monthStr == "Nov")
-        return 11;
-
-    if (monthStr == "Dec")
-        return 12;
-
-    return 1;
+// Returns 1-12, or 0 for an unknown month name.
+int GetMonthFromString(std::string_view monthStr) {
+    static constexpr std::array<std::string_view, 12> Months = {
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    for (size_t i = 0; i < Months.size(); ++i) {
+        if (monthStr == Months[i]) {
+            return static_cast<int>(i) + 1;
+        }
+    }
+    return 0;
 }
+
+// Reads `count` decimal digits at `pos`. Fails if the string ends first or a character is not a
+// digit; a leading space counts as 0 when `space_pad` is set (asctime days).
+bool ParseNumber(std::string_view str, size_t pos, size_t count, int& out, bool space_pad = false) {
+    if (pos > str.size() || count > str.size() - pos) {
+        return false;
+    }
+    int value = 0;
+    for (size_t i = 0; i < count; ++i) {
+        const char c = str[pos + i];
+        if (space_pad && i == 0 && c == ' ') {
+            continue;
+        }
+        if (c < '0' || c > '9') {
+            return false;
+        }
+        value = value * 10 + (c - '0');
+    }
+    out = value;
+    return true;
+}
+
+// Reads a "HH:MM" (or "HHMM" without `colon`) offset after the sign at `pos`, in minutes east of
+// UTC.
+bool ParseOffset(std::string_view str, size_t pos, bool colon, int& minutes) {
+    int hours = 0;
+    int mins = 0;
+    if (!ParseNumber(str, pos + 1, 2, hours) ||
+        (colon && (pos + 3 >= str.size() || str[pos + 3] != ':')) ||
+        !ParseNumber(str, pos + (colon ? 4 : 3), 2, mins) || hours > 23 || mins > 59) {
+        return false;
+    }
+    minutes = hours * 60 + mins;
+    if (str[pos] == '-') {
+        minutes = -minutes;
+    }
+    return true;
+}
+
+// Converts a parsed local date and time to a UTC tick. `offset` is the local time's offset
+// east of UTC in minutes. pTickUtc is written only on success.
+int ToUtcTick(OrbisRtcDateTime dateTime, int offset, OrbisRtcTick* pTickUtc) {
+    OrbisRtcTick tick;
+    const int result = sceRtcGetTick(&dateTime, &tick);
+    if (result != ORBIS_OK) {
+        return result;
+    }
+    sceRtcTickAddMinutes(&tick, &tick, -offset);
+    *pTickUtc = tick;
+    return ORBIS_OK;
+}
+
+} // namespace
 
 int PS4_SYSV_ABI sceRtcParseDateTime(OrbisRtcTick* pTickUtc, const char* pszDateTime) {
     LOG_TRACE(Lib_Rtc, "called");
@@ -745,51 +774,53 @@ int PS4_SYSV_ABI sceRtcParseDateTime(OrbisRtcTick* pTickUtc, const char* pszDate
     if (pTickUtc == nullptr || pszDateTime == nullptr)
         return ORBIS_RTC_ERROR_INVALID_POINTER;
 
-    std::string dateTimeString = std::string(pszDateTime);
-
-    char formatKey = dateTimeString[19];
-    OrbisRtcDateTime dateTime;
-
-    if (formatKey == 'Z' || formatKey == '-' || formatKey == '+' || formatKey == '.') {
-        // RFC3339
-        sceRtcParseRFC3339(pTickUtc, pszDateTime);
-    } else if (formatKey == ':') {
-        // RFC2822
-        dateTime.day = std::stoi(dateTimeString.substr(5, 2));
-        dateTime.month = GetMonthFromString(dateTimeString.substr(8, 3));
-        dateTime.year = std::stoi(dateTimeString.substr(12, 4));
-        dateTime.hour = std::stoi(dateTimeString.substr(17, 2));
-        dateTime.minute = std::stoi(dateTimeString.substr(20, 2));
-        dateTime.second = std::stoi(dateTimeString.substr(23, 2));
-        dateTime.microsecond = 0;
-
-        sceRtcGetTick(&dateTime, pTickUtc);
-
-        if (dateTimeString[26] == '+') {
-            int timeZoneOffset = std::stoi(dateTimeString.substr(27, 2)) * 60;
-            timeZoneOffset += std::stoi(dateTimeString.substr(29, 2));
-            sceRtcTickAddMinutes(pTickUtc, pTickUtc, timeZoneOffset);
-        } else if (dateTimeString[26] == '-') {
-            int timeZoneOffset = std::stoi(dateTimeString.substr(27, 2)) * 60;
-            timeZoneOffset += std::stoi(dateTimeString.substr(29, 2));
-            timeZoneOffset *= -1;
-            sceRtcTickAddMinutes(pTickUtc, pTickUtc, timeZoneOffset);
-        }
-
-    } else {
-        // asctime
-        dateTime.month = GetMonthFromString(dateTimeString.substr(4, 3));
-        dateTime.day = std::stoi(dateTimeString.substr(8, 2));
-        dateTime.hour = std::stoi(dateTimeString.substr(11, 2));
-        dateTime.minute = std::stoi(dateTimeString.substr(14, 2));
-        dateTime.second = std::stoi(dateTimeString.substr(17, 2));
-        dateTime.year = std::stoi(dateTimeString.substr(20, 4));
-        dateTime.microsecond = 0;
-
-        sceRtcGetTick(&dateTime, pTickUtc);
+    const std::string_view dateTimeString{pszDateTime};
+    if (dateTimeString.size() < 20) {
+        return ORBIS_RTC_ERROR_BAD_PARSE;
     }
 
-    return ORBIS_OK;
+    const char formatKey = dateTimeString[19];
+    if (formatKey == 'Z' || formatKey == '-' || formatKey == '+' || formatKey == '.') {
+        // RFC3339
+        return sceRtcParseRFC3339(pTickUtc, pszDateTime);
+    }
+
+    OrbisRtcDateTime dateTime{};
+    int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+    int offset = 0;
+    if (formatKey == ':') {
+        // RFC2822: "Sun, 02 Oct 2026 21:07:46 +0200"
+        month = GetMonthFromString(dateTimeString.substr(8, 3));
+        if (month == 0 || !ParseNumber(dateTimeString, 5, 2, day) ||
+            !ParseNumber(dateTimeString, 12, 4, year) ||
+            !ParseNumber(dateTimeString, 17, 2, hour) ||
+            !ParseNumber(dateTimeString, 20, 2, minute) ||
+            !ParseNumber(dateTimeString, 23, 2, second)) {
+            return ORBIS_RTC_ERROR_BAD_PARSE;
+        }
+        if (dateTimeString.size() > 26 &&
+            (dateTimeString[26] == '+' || dateTimeString[26] == '-') &&
+            !ParseOffset(dateTimeString, 26, false, offset)) {
+            return ORBIS_RTC_ERROR_BAD_PARSE;
+        }
+    } else {
+        // asctime: "Sun Oct  2 21:07:46 2026"
+        month = GetMonthFromString(dateTimeString.substr(4, 3));
+        if (month == 0 || !ParseNumber(dateTimeString, 8, 2, day, true) ||
+            !ParseNumber(dateTimeString, 11, 2, hour) ||
+            !ParseNumber(dateTimeString, 14, 2, minute) ||
+            !ParseNumber(dateTimeString, 17, 2, second) ||
+            !ParseNumber(dateTimeString, 20, 4, year)) {
+            return ORBIS_RTC_ERROR_BAD_PARSE;
+        }
+    }
+    dateTime.year = year;
+    dateTime.month = month;
+    dateTime.day = day;
+    dateTime.hour = hour;
+    dateTime.minute = minute;
+    dateTime.second = second;
+    return ToUtcTick(dateTime, offset, pTickUtc);
 }
 
 int PS4_SYSV_ABI sceRtcParseRFC3339(OrbisRtcTick* pTickUtc, const char* pszDateTime) {
@@ -798,39 +829,62 @@ int PS4_SYSV_ABI sceRtcParseRFC3339(OrbisRtcTick* pTickUtc, const char* pszDateT
     if (pTickUtc == nullptr || pszDateTime == nullptr)
         return ORBIS_RTC_ERROR_INVALID_POINTER;
 
-    std::string dateTimeString = std::string(pszDateTime);
-
-    OrbisRtcDateTime dateTime;
-    dateTime.year = std::stoi(dateTimeString.substr(0, 4));
-    dateTime.month = std::stoi(dateTimeString.substr(5, 2));
-    dateTime.day = std::stoi(dateTimeString.substr(8, 2));
-    dateTime.hour = std::stoi(dateTimeString.substr(11, 2));
-    dateTime.minute = std::stoi(dateTimeString.substr(14, 2));
-    dateTime.second = std::stoi(dateTimeString.substr(17, 2));
-    s32 timezone_pos = 22;
-    if (dateTimeString[19] == '.') {
-        dateTime.microsecond = std::stoi(dateTimeString.substr(20, 2));
-    } else {
-        timezone_pos = 19;
-        dateTime.microsecond = 0;
+    // "2026-10-12T21:07:46[.fraction](Z|+HH:MM|-HH:MM)", nothing after the zone. As RFC 3339
+    // allows, "T" and "Z" may be lower case and "T" may be a space.
+    const std::string_view dateTimeString{pszDateTime};
+    int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+    if (!ParseNumber(dateTimeString, 0, 4, year) || !ParseNumber(dateTimeString, 5, 2, month) ||
+        !ParseNumber(dateTimeString, 8, 2, day) || !ParseNumber(dateTimeString, 11, 2, hour) ||
+        !ParseNumber(dateTimeString, 14, 2, minute) ||
+        !ParseNumber(dateTimeString, 17, 2, second) || dateTimeString[4] != '-' ||
+        dateTimeString[7] != '-' ||
+        (dateTimeString[10] != 'T' && dateTimeString[10] != 't' && dateTimeString[10] != ' ') ||
+        dateTimeString[13] != ':' || dateTimeString[16] != ':') {
+        return ORBIS_RTC_ERROR_BAD_PARSE;
     }
 
-    sceRtcGetTick(&dateTime, pTickUtc);
+    OrbisRtcDateTime dateTime{};
+    dateTime.year = year;
+    dateTime.month = month;
+    dateTime.day = day;
+    dateTime.hour = hour;
+    dateTime.minute = minute;
+    dateTime.second = second;
 
-    if (dateTimeString[timezone_pos] != 'Z') {
-        if (dateTimeString[timezone_pos] == '-') {
-            int timeZoneOffset = std::stoi(dateTimeString.substr(timezone_pos + 1, 2)) * 60;
-            timeZoneOffset += std::stoi(dateTimeString.substr(timezone_pos + 4, 2));
-            timeZoneOffset *= -1;
-            sceRtcTickAddMinutes(pTickUtc, pTickUtc, timeZoneOffset);
-        } else if (dateTimeString[timezone_pos] == '+') {
-            int timeZoneOffset = std::stoi(dateTimeString.substr(timezone_pos + 1, 2)) * 60;
-            timeZoneOffset += std::stoi(dateTimeString.substr(timezone_pos + 4, 2));
-            sceRtcTickAddMinutes(pTickUtc, pTickUtc, timeZoneOffset);
+    size_t timezone_pos = 19;
+    if (timezone_pos < dateTimeString.size() && dateTimeString[timezone_pos] == '.') {
+        // Fraction of a second; digits beyond microseconds are dropped.
+        ++timezone_pos;
+        const size_t digits_start = timezone_pos;
+        u32 scale = 100000;
+        while (timezone_pos < dateTimeString.size() && dateTimeString[timezone_pos] >= '0' &&
+               dateTimeString[timezone_pos] <= '9') {
+            dateTime.microsecond += (dateTimeString[timezone_pos] - '0') * scale;
+            scale /= 10;
+            ++timezone_pos;
+        }
+        if (timezone_pos == digits_start) {
+            return ORBIS_RTC_ERROR_BAD_PARSE;
         }
     }
 
-    return ORBIS_OK;
+    int offset = 0;
+    if (timezone_pos >= dateTimeString.size()) {
+        return ORBIS_RTC_ERROR_BAD_PARSE;
+    }
+    const char zone = dateTimeString[timezone_pos];
+    if (zone == 'Z' || zone == 'z') {
+        timezone_pos += 1;
+    } else if ((zone == '+' || zone == '-') &&
+               ParseOffset(dateTimeString, timezone_pos, true, offset)) {
+        timezone_pos += 6;
+    } else {
+        return ORBIS_RTC_ERROR_BAD_PARSE;
+    }
+    if (timezone_pos != dateTimeString.size()) {
+        return ORBIS_RTC_ERROR_BAD_PARSE;
+    }
+    return ToUtcTick(dateTime, offset, pTickUtc);
 }
 
 void PS4_SYSV_ABI sceRtcSetConf(void* p1, void* p2, s32 minuteswest, s32 dsttime) {
@@ -842,11 +896,11 @@ void PS4_SYSV_ABI sceRtcSetConf(void* p1, void* p2, s32 minuteswest, s32 dsttime
 
 int PS4_SYSV_ABI sceRtcSetCurrentAdNetworkTick(OrbisRtcTick* pTick) {
     LOG_INFO(Lib_Rtc, "called");
-    if (UNIX_EPOCH_TICKS >= pTick->tick) {
-        return ORBIS_RTC_ERROR_INVALID_VALUE;
-    }
     s32 ret = 0;
     if (pTick != nullptr) {
+        if (UNIX_EPOCH_TICKS >= pTick->tick) {
+            return ORBIS_RTC_ERROR_INVALID_VALUE;
+        }
         u64 temp = pTick->tick - UNIX_EPOCH_TICKS;
         Kernel::OrbisKernelTimespec ts(temp / 1000000, temp % 1000000);
         ret = Kernel::posix_clock_settime(ORBIS_RTC_CLOCK_ID_AD_NETWORK, &ts);
@@ -861,11 +915,11 @@ int PS4_SYSV_ABI sceRtcSetCurrentAdNetworkTick(OrbisRtcTick* pTick) {
 
 int PS4_SYSV_ABI sceRtcSetCurrentDebugNetworkTick(OrbisRtcTick* pTick) {
     LOG_INFO(Lib_Rtc, "called");
-    if (UNIX_EPOCH_TICKS >= pTick->tick) {
-        return ORBIS_RTC_ERROR_INVALID_VALUE;
-    }
     s32 ret = 0;
     if (pTick != nullptr) {
+        if (UNIX_EPOCH_TICKS >= pTick->tick) {
+            return ORBIS_RTC_ERROR_INVALID_VALUE;
+        }
         u64 temp = pTick->tick - UNIX_EPOCH_TICKS;
         Kernel::OrbisKernelTimespec ts(temp / 1000000, temp % 1000000);
         ret = Kernel::posix_clock_settime(ORBIS_RTC_CLOCK_ID_DEBUG_NETWORK, &ts);
@@ -880,11 +934,11 @@ int PS4_SYSV_ABI sceRtcSetCurrentDebugNetworkTick(OrbisRtcTick* pTick) {
 
 int PS4_SYSV_ABI sceRtcSetCurrentNetworkTick(OrbisRtcTick* pTick) {
     LOG_INFO(Lib_Rtc, "called");
-    if (UNIX_EPOCH_TICKS >= pTick->tick) {
-        return ORBIS_RTC_ERROR_INVALID_VALUE;
-    }
     s32 ret = 0;
     if (pTick != nullptr) {
+        if (UNIX_EPOCH_TICKS >= pTick->tick) {
+            return ORBIS_RTC_ERROR_INVALID_VALUE;
+        }
         u64 temp = pTick->tick - UNIX_EPOCH_TICKS;
         Kernel::OrbisKernelTimespec ts(temp / 1000000, temp % 1000000);
         ret = Kernel::posix_clock_settime(ORBIS_RTC_CLOCK_ID_NETWORK, &ts);
