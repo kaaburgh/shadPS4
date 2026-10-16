@@ -124,17 +124,7 @@ s32 ReadCompiledSdkVersion(const std::string& guest_or_host_path) {
     if (!elf.IsElfFile()) {
         return 0;
     }
-    const auto elf_pheader = elf.GetProgramHeader();
-    auto i_procparam = std::find_if(elf_pheader.begin(), elf_pheader.end(), [](const auto& entry) {
-        return entry.p_type == PT_SCE_PROCPARAM;
-    });
-
-    if (i_procparam != elf_pheader.end()) {
-        Core::OrbisProcParam param{};
-        elf.LoadSegment(u64(&param), i_procparam->p_offset, i_procparam->p_filesz);
-        return param.sdk_version;
-    }
-    return 0;
+    return static_cast<s32>(elf.ReadProcParamSdkVersion());
 }
 
 std::map<s32, std::string> ExtractTrophies(std::string_view npbind_guest,
