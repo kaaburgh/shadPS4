@@ -313,9 +313,22 @@ s32 PS4_SYSV_ABI posix_clock_getres(u32 clock_id, OrbisKernelTimespec* res) {
         res->tv_nsec = 1;
         return 0;
     }
+    if (clock_id == ORBIS_CLOCK_PROCTIME) {
+        // Read from sceKernelGetProcessTime, in microseconds.
+        res->tv_sec = 0;
+        res->tv_nsec = 1000;
+        return 0;
+    }
 
 #ifdef _WIN32
     switch (clock_id) {
+    case ORBIS_CLOCK_VIRTUAL:
+    case ORBIS_CLOCK_PROF:
+    case ORBIS_CLOCK_THREAD_CPUTIME_ID:
+        // Read from FILETIMEs, in 100 ns units.
+        res->tv_sec = 0;
+        res->tv_nsec = 100;
+        return 0;
     case ORBIS_CLOCK_SECOND:
     case ORBIS_CLOCK_REALTIME_FAST: {
         DWORD timeAdjustment;
@@ -348,7 +361,8 @@ s32 PS4_SYSV_ABI posix_clock_getres(u32 clock_id, OrbisKernelTimespec* res) {
         return 0;
     }
     default:
-        UNREACHABLE();
+        SetPosixErrno(EFAULT);
+        return -1;
     }
 #else
     clockid_t pclock_id;
@@ -379,8 +393,18 @@ s32 PS4_SYSV_ABI posix_clock_getres(u32 clock_id, OrbisKernelTimespec* res) {
         pclock_id = CLOCK_MONOTONIC;
 #endif
         break;
+    case ORBIS_CLOCK_THREAD_CPUTIME_ID:
+        pclock_id = CLOCK_THREAD_CPUTIME_ID;
+        break;
+    case ORBIS_CLOCK_VIRTUAL:
+    case ORBIS_CLOCK_PROF:
+        // Read from getrusage, in microseconds.
+        res->tv_sec = 0;
+        res->tv_nsec = 1000;
+        return 0;
     default:
-        UNREACHABLE();
+        SetPosixErrno(EFAULT);
+        return -1;
     }
 
     timespec t{};
