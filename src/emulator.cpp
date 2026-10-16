@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <ctime>
+#include <cstddef>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -125,6 +126,14 @@ s32 ReadCompiledSdkVersion(const std::string& guest_or_host_path) {
 
     if (i_procparam != elf_pheader.end()) {
         Core::OrbisProcParam param{};
+        constexpr size_t min_size =
+            offsetof(Core::OrbisProcParam, sdk_version) + sizeof(param.sdk_version);
+        if (i_procparam->p_filesz < min_size || i_procparam->p_filesz > sizeof(param) ||
+            i_procparam->p_memsz < i_procparam->p_filesz) {
+            LOG_ERROR(Loader, "Invalid PT_SCE_PROCPARAM segment size: file={:#x}, memory={:#x}",
+                      i_procparam->p_filesz, i_procparam->p_memsz);
+            return 0;
+        }
         elf.LoadSegment(u64(&param), i_procparam->p_offset, i_procparam->p_filesz);
         return param.sdk_version;
     }
