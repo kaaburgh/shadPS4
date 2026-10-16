@@ -50,6 +50,9 @@ s32 PS4_SYSV_ABI scePlayGoGetChunkId(OrbisPlayGoHandle handle, OrbisPlayGoChunkI
     if (outChunkIdList != nullptr && numberOfEntries == 0) {
         return ORBIS_PLAYGO_ERROR_BAD_SIZE;
     }
+    if (!playgo) {
+        return ORBIS_PLAYGO_ERROR_NOT_INITIALIZED;
+    }
 
     if (playgo->GetPlaygoHeader().file_size == 0) {
         *outEntries = 0;
@@ -170,8 +173,7 @@ s32 PS4_SYSV_ABI scePlayGoGetLocus(OrbisPlayGoHandle handle, const OrbisPlayGoCh
 
 s32 PS4_SYSV_ABI scePlayGoGetProgress(OrbisPlayGoHandle handle, const OrbisPlayGoChunkId* chunkIds,
                                       uint32_t numberOfEntries, OrbisPlayGoProgress* outProgress) {
-    LOG_DEBUG(Lib_PlayGo, "called handle = {}, chunkIds = {}, numberOfEntries = {}", handle,
-              *chunkIds, numberOfEntries);
+    LOG_DEBUG(Lib_PlayGo, "called handle = {}, numberOfEntries = {}", handle, numberOfEntries);
 
     if (handle != PlaygoHandle) {
         return ORBIS_PLAYGO_ERROR_BAD_HANDLE;
@@ -228,7 +230,7 @@ s32 PS4_SYSV_ABI scePlayGoGetToDoList(OrbisPlayGoHandle handle, OrbisPlayGoToDo*
     return ORBIS_OK;
 }
 
-int scePlayGoConvertLanguage(int systemLang) {
+u64 scePlayGoConvertLanguage(u64 systemLang) {
     if (systemLang >= 0 && systemLang < 48) {
         return (1 << (64 - systemLang - 1));
     } else {
@@ -237,6 +239,9 @@ int scePlayGoConvertLanguage(int systemLang) {
 }
 
 s32 PS4_SYSV_ABI scePlayGoInitialize(OrbisPlayGoInitParams* param) {
+    if (param == nullptr) {
+        return ORBIS_PLAYGO_ERROR_BAD_POINTER;
+    }
     LOG_INFO(Lib_PlayGo, "called, bufSize = {}", param->bufSize);
     if (param->bufAddr == nullptr) {
         return ORBIS_PLAYGO_ERROR_BAD_POINTER;

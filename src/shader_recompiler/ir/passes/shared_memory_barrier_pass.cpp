@@ -17,7 +17,7 @@ static bool IsLoadShared(const IR::Inst& inst) {
 
 static bool IsWriteShared(const IR::Inst& inst) {
     const IR::Opcode opcode = inst.GetOpcode();
-    if (opcode >= IR::Opcode::SharedAtomicIAdd32 && opcode <= IR::Opcode::SharedAtomicXor64) {
+    if (opcode >= IR::Opcode::SharedAtomicIAdd32 && opcode <= IR::Opcode::SharedAtomicCmpSwap64) {
         return !inst.Flags<bool>();
     }
     return opcode == IR::Opcode::WriteSharedU16 || opcode == IR::Opcode::WriteSharedU32 ||
@@ -25,7 +25,14 @@ static bool IsWriteShared(const IR::Inst& inst) {
 }
 
 // Inserts barriers when a shared memory write and read occur in the same basic block.
-static void EmitBarrierInBlock(IR::Block* block) {
+static void EmitBarrierInBlock(IR::Block* block, bool subgroup = false) {
+    const auto emit_barrier = [subgroup](IR::IREmitter& ir) {
+        if (subgroup) {
+            ir.SubgroupBarrier();
+        } else {
+            ir.Barrier();
+        }
+    };
     enum class BarrierAction : u32 {
         None,
         BarrierOnWrite,
@@ -36,7 +43,7 @@ static void EmitBarrierInBlock(IR::Block* block) {
         if (IsLoadShared(inst)) {
             if (action == BarrierAction::BarrierOnRead) {
                 IR::IREmitter ir{*block, IR::Block::InstructionList::s_iterator_to(inst)};
-                ir.Barrier();
+                emit_barrier(ir);
             }
             action = BarrierAction::BarrierOnWrite;
             continue;
@@ -44,14 +51,14 @@ static void EmitBarrierInBlock(IR::Block* block) {
         if (IsWriteShared(inst)) {
             if (action == BarrierAction::BarrierOnWrite) {
                 IR::IREmitter ir{*block, IR::Block::InstructionList::s_iterator_to(inst)};
-                ir.Barrier();
+                emit_barrier(ir);
             }
             action = BarrierAction::BarrierOnRead;
         }
     }
     if (action != BarrierAction::None) {
         IR::IREmitter ir{*block, --block->end()};
-        ir.Barrier();
+        emit_barrier(ir);
     }
 }
 
@@ -114,17 +121,27 @@ static constexpr u32 GcnSubgroupSize = 64;
 
 void SharedMemoryBarrierPass(IR::Program& program, const RuntimeInfo& runtime_info,
                              const Profile& profile) {
-    if (program.info.stage != Stage::Compute) {
+    if (program.info.hw_stage != HwStage::Compute) {
         return;
     }
-    const auto& cs_info = runtime_info.cs_info;
+    const auto& cs_info = runtime_info.hw.cs;
     const u32 shared_memory_size = cs_info.shared_memory_size;
     const u32 threadgroup_size =
         cs_info.workgroup_size[0] * cs_info.workgroup_size[1] * cs_info.workgroup_size[2];
+    if (shared_memory_size == 0) {
+        return;
+    }
     // The compiler can only omit barriers when the local workgroup size is the same as the HW
     // subgroup.
-    if (shared_memory_size == 0 || threadgroup_size != GcnSubgroupSize ||
-        !profile.needs_lds_barriers) {
+    if (threadgroup_size != GcnSubgroupSize || !profile.needs_lds_barriers) {
+        // GCN waves can use shared memory between invocations without explicit barriers because
+        // they run in lockstep. Host compilers can reorder these accesses, so keep their order
+        // with subgroup memory barriers.
+        for (const IR::AbstractSyntaxNode& node : program.syntax_list) {
+            if (node.type == IR::AbstractSyntaxNode::Type::Block) {
+                EmitBarrierInBlock(node.data.block, true);
+            }
+        }
         return;
     }
     using Type = IR::AbstractSyntaxNode::Type;

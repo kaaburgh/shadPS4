@@ -32,6 +32,7 @@
 #include "core/libraries/audio/audioout.h"
 #include "core/libraries/audio/audioout_backend.h"
 #include "core/libraries/audio/openal_manager.h"
+#include "core/libraries/audio/output_pacer.h"
 #include "core/libraries/kernel/threads.h"
 
 // SIMD support detection
@@ -48,8 +49,6 @@ constexpr float INV_VOLUME_0DB = 1.0f / VOLUME_0DB;
 constexpr float VOLUME_EPSILON = 0.001f;
 // Timing constants
 constexpr u64 VOLUME_CHECK_INTERVAL_US = 50000; // Check every 50ms
-constexpr u64 MIN_SLEEP_THRESHOLD_US = 10;
-constexpr u64 TIMING_RESYNC_THRESHOLD_US = 100000; // Resync if >100ms behind
 
 // OpenAL constants
 constexpr ALsizei NUM_BUFFERS = 6;
@@ -164,7 +163,7 @@ public:
         if (queued >= 2) {
             HandleTiming(current_time);
         } else {
-            next_output_time = current_time + period_us;
+            pacer.Resync(current_time);
         }
 
         last_output_time.store(current_time, std::memory_order_release);
@@ -242,7 +241,7 @@ private:
                  device_name);
 
         // Calculate timing parameters
-        period_us = (1000000ULL * buffer_frames + sample_rate / 2) / sample_rate;
+        pacer.SetPeriod((1000000ULL * buffer_frames + sample_rate / 2) / sample_rate);
 
         // Check for AL_EXT_FLOAT32 extension
         has_float_ext = alIsExtensionPresent("AL_EXT_FLOAT32");
@@ -406,25 +405,9 @@ private:
     }
 
     void HandleTiming(u64 current_time) {
-        if (next_output_time == 0) [[unlikely]] {
-            next_output_time = current_time + period_us;
-            return;
-        }
-
-        const s64 time_diff = static_cast<s64>(current_time - next_output_time);
-
-        if (time_diff > static_cast<s64>(TIMING_RESYNC_THRESHOLD_US)) [[unlikely]] {
-            next_output_time = current_time + period_us;
-        } else if (time_diff < 0) {
-            const u64 time_to_wait = static_cast<u64>(-time_diff);
-            next_output_time += period_us;
-
-            if (time_to_wait > MIN_SLEEP_THRESHOLD_US) {
-                const u64 sleep_duration = time_to_wait - MIN_SLEEP_THRESHOLD_US;
-                std::this_thread::sleep_for(std::chrono::microseconds(sleep_duration));
-            }
-        } else {
-            next_output_time += period_us;
+        const u64 wait_us = pacer.OnOutput(current_time);
+        if (wait_us != 0) {
+            std::this_thread::sleep_for(std::chrono::microseconds(wait_us));
         }
     }
 
@@ -1039,9 +1022,8 @@ private:
     const bool is_std;
     const std::array<int, 8> channel_layout;
 
-    alignas(64) u64 period_us{0};
     alignas(64) std::atomic<u64> last_output_time{0};
-    u64 next_output_time{0};
+    OutputPacer pacer;
     u64 last_volume_check_time{0};
     u32 output_count{0};
 
