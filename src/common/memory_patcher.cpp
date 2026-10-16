@@ -14,11 +14,13 @@
 #include "core/emulator_state.h"
 #include "core/file_format/psf.h"
 #include "memory_patcher.h"
+#include "patch_path.h"
 
 namespace MemoryPatcher {
 
 EXPORT uintptr_t g_eboot_address;
 uint64_t g_eboot_image_size;
+std::string g_eboot_name;
 std::string g_game_serial;
 std::string patch_file;
 bool patches_applied = false;
@@ -144,7 +146,11 @@ void ApplyPatchesFromXML(std::filesystem::path path) {
                 if (std::string(it->attribute("isEnabled").value()) == "true") {
                     std::string currentPatchName = it->attribute("Name").value();
                     std::string metadataAppVer = it->attribute("AppVer").value();
+                    std::string metadataAppElf = it->attribute("AppElf").value();
                     bool versionMatches = metadataAppVer == app_version;
+
+                    if (metadataAppElf != g_eboot_name)
+                        continue;
 
                     auto patchList = it->first_child();
                     for (pugi::xml_node_iterator patchLineIt = patchList.children().begin();
@@ -218,12 +224,14 @@ void ApplyPatchesFromXML(std::filesystem::path path) {
 void OnGameLoaded() {
     std::filesystem::path patch_dir = Common::FS::GetUserPath(Common::FS::PathType::PatchesDir);
     if (!patch_file.empty()) {
-
-        auto file_path = (patch_dir / patch_file).native();
-        if (std::filesystem::exists(patch_file)) {
-            ApplyPatchesFromXML(patch_file);
+        const auto lookup = ResolveExplicitPatchPath(patch_dir, patch_file);
+        if (lookup.ambiguous) {
+            LOG_ERROR(Loader, "Patch '{}' appears in multiple provider folders; specify its path",
+                      patch_file);
+        } else if (lookup.path.empty()) {
+            LOG_ERROR(Loader, "Could not find explicitly requested patch '{}'", patch_file);
         } else {
-            ApplyPatchesFromXML(file_path);
+            ApplyPatchesFromXML(lookup.path);
         }
     } else if (EmulatorState::GetInstance()->IsAutoPatchesLoadEnabled()) {
         for (auto const& repo : std::filesystem::directory_iterator(patch_dir)) {

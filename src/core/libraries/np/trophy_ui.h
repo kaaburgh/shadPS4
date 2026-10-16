@@ -11,15 +11,14 @@
 
 namespace Libraries::Np::NpTrophy {
 
-class TrophyUI final : public ImGui::Layer {
+// One trophy popup. A layer in trophy_ui.cpp draws the current one.
+class TrophyUI final {
 public:
     TrophyUI(const std::filesystem::path& trophyIconPath, const std::string& trophyName,
              const std::string_view& rarity);
-    ~TrophyUI() override;
+    ~TrophyUI();
 
-    void Finish();
-
-    void Draw() override;
+    void Draw();
 
 private:
     void PlayMp3(std::vector<unsigned char> mp3Data);
@@ -29,8 +28,8 @@ private:
     std::string_view trophy_type;
     ImGui::RefCountedTexture trophy_icon;
     ImGui::RefCountedTexture trophy_type_icon;
-    SDL_AudioStream* stream;
-    SDL_AudioDeviceID audioDevice;
+    SDL_AudioStream* stream = nullptr;
+    SDL_AudioDeviceID audioDevice = 0;
 };
 
 struct TrophyInfo {
