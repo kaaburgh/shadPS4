@@ -15,6 +15,9 @@ int PS4_SYSV_ABI sceSharePlayCrashDaemon() {
 }
 
 int PS4_SYSV_ABI sceSharePlayGetCurrentConnectionInfo(OrbisSharePlayConnectionInfo* pInfo) {
+    if (pInfo == nullptr) {
+        return ORBIS_SHARE_PLAY_ERROR_INVALID_ARGS;
+    }
     memset(pInfo, 0, sizeof(*pInfo));
     pInfo->status = ORBIS_SHARE_PLAY_CONNECTION_STATUS_DORMANT;
     LOG_DEBUG(Lib_SharePlay, "(STUBBED) called");
