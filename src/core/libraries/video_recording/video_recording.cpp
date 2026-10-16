@@ -19,7 +19,7 @@ s32 PS4_SYSV_ABI sceVideoRecordingSetInfo(OrbisVideoRecordingInfo set_info, cons
          set_info < OrbisVideoRecordingInfo::Chapter) ||
         (set_info > OrbisVideoRecordingInfo::Chapter &&
          set_info < OrbisVideoRecordingInfo::Copyright) ||
-        (set_info > OrbisVideoRecordingInfo::Chapter &&
+        (set_info > OrbisVideoRecordingInfo::Copyright &&
          set_info < OrbisVideoRecordingInfo::PermisssionLevel) ||
         set_info > OrbisVideoRecordingInfo::UserMeta) {
         return ORBIS_VIDEO_RECORDING_ERROR_INVALID_VALUE;
