@@ -3,8 +3,16 @@
 
 #include "ipc.h"
 
+#include <cerrno>
 #include <iostream>
 #include <string>
+#include <thread>
+
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <SDL3/SDL.h>
 
@@ -65,6 +73,35 @@ extern std::unique_ptr<Vulkan::Presenter> presenter;
  *   - RESTART(argn: number, argv: ...string): Request restart of the emulator, must call STOP
  **/
 
+namespace {
+
+// Reads one line from stdin without the trailing newline. Returns false once the input is closed.
+// This reads the file descriptor directly instead of going through std::cin: a thread blocked in
+// a stdio read holds the stdin lock, which the C runtime takes again to flush streams at exit.
+bool ReadInputLine(std::string& line) {
+    line.clear();
+    char c;
+    while (true) {
+#ifdef _WIN32
+        const int result = _read(0, &c, 1);
+#else
+        const ssize_t result = read(STDIN_FILENO, &c, 1);
+#endif
+        if (result == 1) {
+            if (c == '\n') {
+                return true;
+            }
+            line.push_back(c);
+        } else if (result < 0 && errno == EINTR) {
+            continue;
+        } else {
+            return !line.empty();
+        }
+    }
+}
+
+} // namespace
+
 void IPC::Init() {
     const char* enabledEnv = std::getenv("SHADPS4_ENABLE_IPC");
     enabled = enabledEnv && strcmp(enabledEnv, "true") == 0;
@@ -74,10 +111,12 @@ void IPC::Init() {
 
     EmulatorState::GetInstance()->SetAutoPatchesLoadEnabled(false);
 
-    input_thread = std::jthread([this] {
+    // The input thread spends its time blocked on stdin, which cannot be interrupted, so it is
+    // detached instead of being joined when the process exits.
+    std::thread([this] {
         Common::SetCurrentThreadName("IPC Read thread");
         this->InputLoop();
-    });
+    }).detach();
 
     std::cerr << ";#IPC_ENABLED\n";
     std::cerr << ";ENABLE_MEMORY_PATCH\n";
@@ -102,11 +141,12 @@ void IPC::SendRestart(const std::vector<std::string>& args) {
 }
 
 void IPC::InputLoop() {
+    std::string line_buffer;
+    bool input_open = true;
     auto next_str = [&] -> const std::string& {
-        static std::string line_buffer;
         do {
-            std::getline(std::cin, line_buffer, '\n');
-        } while (!line_buffer.empty() && line_buffer.back() == '\\');
+            input_open = ReadInputLine(line_buffer);
+        } while (input_open && !line_buffer.empty() && line_buffer.back() == '\\');
         return line_buffer;
     };
     auto next_u64 = [&] -> u64 {
@@ -116,6 +156,10 @@ void IPC::InputLoop() {
 
     while (true) {
         auto& cmd = next_str();
+        if (!input_open) {
+            // stdin was closed, no further commands can arrive.
+            break;
+        }
         if (cmd.empty()) {
             continue;
         }
