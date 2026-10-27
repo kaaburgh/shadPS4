@@ -90,6 +90,14 @@ void Translator::EmitDataShare(const GcnInst& inst) {
         return DS_READ(64, false, true, false, inst);
     case Opcode::DS_READ2ST64_B64:
         return DS_READ(64, false, true, true, inst);
+    case Opcode::DS_WRITE_B96:
+        return DS_WRITE(96, false, false, false, inst);
+    case Opcode::DS_WRITE_B128:
+        return DS_WRITE(128, false, false, false, inst);
+    case Opcode::DS_READ_B96:
+        return DS_READ(96, false, false, false, inst);
+    case Opcode::DS_READ_B128:
+        return DS_READ(128, false, false, false, inst);
     default:
         LogMissingOpcode(inst);
     }
@@ -237,7 +245,12 @@ void Translator::DS_WRITE(int bit_size, bool is_signed, bool is_pair, bool strid
         }
     } else {
         const IR::U32 addr0 = ir.IAdd(addr, ir.Imm32(offset));
-        if (bit_size == 64) {
+        if (bit_size == 96 || bit_size == 128) {
+            for (u32 i = 0; i < u32(bit_size) / 32; ++i) {
+                ir.WriteShared(32, ir.GetVectorReg(data0 + i), ir.IAdd(addr0, ir.Imm32(4 * i)),
+                               is_gds);
+            }
+        } else if (bit_size == 64) {
             const IR::Value data =
                 ir.CompositeConstruct(ir.GetVectorReg(data0), ir.GetVectorReg(data0 + 1));
             ir.WriteShared(bit_size, ir.PackUint2x32(data), addr0, is_gds);
@@ -288,6 +301,14 @@ void Translator::DS_READ(int bit_size, bool is_signed, bool is_pair, bool stride
         }
     } else {
         const IR::U32 addr0 = ir.IAdd(addr, ir.Imm32(offset));
+        if (bit_size == 96 || bit_size == 128) {
+            for (u32 i = 0; i < u32(bit_size) / 32; ++i) {
+                const IR::Value data =
+                    ir.LoadShared(32, false, ir.IAdd(addr0, ir.Imm32(4 * i)), is_gds);
+                ir.SetVectorReg(dst_reg + i, IR::U32{data});
+            }
+            return;
+        }
         const IR::Value data = ir.LoadShared(bit_size, is_signed, addr0, is_gds);
         if (bit_size == 64) {
             const auto vector = ir.UnpackUint2x32(IR::U64{data});
@@ -334,8 +355,25 @@ void Translator::DS_SWIZZLE_B32(const GcnInst& inst) {
     }
 }
 
+// DS_APPEND and DS_CONSUME on LDS: the address is the instruction offset, M0 only clamps it.
+// The wave adds (or subtracts) its number of active lanes once, and every lane gets the value
+// from before. Only the first active lane changes the value; the others add 0.
+IR::U32 Translator::LdsAppendConsume(u32 address, bool consume) {
+    const IR::U64 active{ir.Ballot(ir.GetExec())};
+    const IR::U32 first{ir.BallotFindLsb(active)};
+    const IR::U32 data{ir.Select(ir.IEqual(ir.LaneId(), first), ir.BitCount(active), ir.Imm32(0u))};
+    const IR::U32 addr{ir.Imm32(address)};
+    const IR::U32 prev{consume ? ir.SharedAtomicISub(addr, data, false)
+                               : ir.SharedAtomicIAdd(addr, data, false)};
+    return ir.ReadLane(prev, first);
+}
+
 void Translator::DS_APPEND(const GcnInst& inst) {
     const u32 inst_offset = (u32(inst.control.ds.offset1) << 8u) + inst.control.ds.offset0;
+    if (!inst.control.ds.gds) {
+        SetDst(inst.dst[0], LdsAppendConsume(inst_offset, false));
+        return;
+    }
     const IR::U32 base = ir.BitFieldExtract(ir.GetM0(), ir.Imm32(16), ir.Imm32(16));
     const IR::U32 gds_offset = ir.IAdd(base, ir.Imm32(inst_offset));
     const IR::U32 prev = ir.DataAppend(ir.ShiftRightLogical(gds_offset, ir.Imm32(2u)));
@@ -344,6 +382,10 @@ void Translator::DS_APPEND(const GcnInst& inst) {
 
 void Translator::DS_CONSUME(const GcnInst& inst) {
     const u32 inst_offset = (u32(inst.control.ds.offset1) << 8u) + inst.control.ds.offset0;
+    if (!inst.control.ds.gds) {
+        SetDst(inst.dst[0], LdsAppendConsume(inst_offset, true));
+        return;
+    }
     const IR::U32 base = ir.BitFieldExtract(ir.GetM0(), ir.Imm32(16), ir.Imm32(16));
     const IR::U32 gds_offset = ir.IAdd(base, ir.Imm32(inst_offset));
     const IR::U32 prev = ir.DataConsume(ir.ShiftRightLogical(gds_offset, ir.Imm32(2u)));

@@ -393,6 +393,7 @@ private:
     IR::F32 LegacyMul(const IR::F32& a, const IR::F32& b);
     IR::U32 ClampFieldWidth(const IR::U32& offset, const IR::U32& width);
     IR::F32 TruncateToF16(const IR::F32& value);
+    IR::U32 LdsAppendConsume(u32 address, bool consume);
     IR::U32 VMovRelSHelper(u32 src_vgprno, const IR::U32 m0);
     void VMovRelDHelper(u32 dst_vgprno, const IR::U32 src_val, const IR::U32 m0);
 

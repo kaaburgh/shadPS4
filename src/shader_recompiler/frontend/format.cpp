@@ -3765,11 +3765,9 @@ constexpr std::array<InstFormat, 256> InstructionFormatDS = {{
     {},
     {},
     // 222 = DS_WRITE_B96
-    {InstClass::Undefined, InstCategory::Undefined, 3, 1, ScalarType::Undefined,
-     ScalarType::Undefined},
+    {InstClass::DsIdxWr, InstCategory::DataShare, 3, 1, ScalarType::Uint32, ScalarType::Uint32},
     // 223 = DS_WRITE_B128
-    {InstClass::Undefined, InstCategory::Undefined, 3, 1, ScalarType::Undefined,
-     ScalarType::Undefined},
+    {InstClass::DsIdxWr, InstCategory::DataShare, 3, 1, ScalarType::Uint32, ScalarType::Uint32},
     {},
     {},
     {},
@@ -3803,11 +3801,9 @@ constexpr std::array<InstFormat, 256> InstructionFormatDS = {{
     {InstClass::Undefined, InstCategory::Undefined, 3, 1, ScalarType::Undefined,
      ScalarType::Undefined},
     // 254 = DS_READ_B96
-    {InstClass::Undefined, InstCategory::Undefined, 3, 1, ScalarType::Undefined,
-     ScalarType::Undefined},
+    {InstClass::DsIdxRd, InstCategory::DataShare, 3, 1, ScalarType::Uint32, ScalarType::Uint32},
     // 255 = DS_READ_B128
-    {InstClass::Undefined, InstCategory::Undefined, 3, 1, ScalarType::Undefined,
-     ScalarType::Undefined},
+    {InstClass::DsIdxRd, InstCategory::DataShare, 3, 1, ScalarType::Uint32, ScalarType::Uint32},
 }};
 
 constexpr std::array<InstFormat, 114> InstructionFormatMUBUF = {{
