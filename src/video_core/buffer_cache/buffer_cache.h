@@ -30,6 +30,7 @@ class StagingBufferPool;
 
 namespace VideoCore {
 
+struct Image;
 class TextureCache;
 class MemoryTracker;
 class PageManager;
@@ -101,6 +102,16 @@ public:
     /// Synchronizes all buffers needed for DMA.
     void SynchronizeDmaBuffers();
 
+    /// Guest memory holds newer data for this range than the GPU copy. The range becomes
+    /// CPU-modified, so it is uploaded again before the GPU uses it.
+    void DiscardGpuModified(VAddr device_addr, u64 size);
+
+    /// Copies images that the GPU wrote after the buffer cache last copied them: those that
+    /// contain the address, and for a written range every one it overlaps, so the write lands
+    /// on top of them. Call it before recording image layouts for the same work. Returns true
+    /// if it copied an image.
+    bool SynchronizeBufferStaleImages(VAddr device_addr, u64 size = 1, bool is_written = false);
+
     /// Commits pending sparse buffer memory binds. Must be called before every scheduler submit.
     void SubmitPendingArenaBinds(Vulkan::SubmitInfo& info);
 
@@ -128,6 +139,8 @@ private:
                            bool is_texel_buffer);
 
     bool SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_addr, u32 size);
+
+    bool CopyImageToBuffer(Image& image, const Buffer* arena, u64 arena_offset);
 
     const Vulkan::Instance& instance;
     Vulkan::Scheduler& scheduler;

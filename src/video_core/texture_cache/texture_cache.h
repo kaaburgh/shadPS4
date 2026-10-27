@@ -17,6 +17,7 @@
 #include "common/multi_level_page_table.h"
 #include "common/slot_vector.h"
 #include "shader_recompiler/resource.h"
+#include "video_core/buffer_cache/range_set.h"
 #include "video_core/texture_cache/blit_helper.h"
 #include "video_core/texture_cache/image.h"
 #include "video_core/texture_cache/image_view.h"
@@ -116,6 +117,9 @@ public:
     /// Marks an image as dirty if it exists at the provided address.
     void InvalidateMemoryFromGPU(VAddr address, size_t max_size);
 
+    /// Marks every image that overlaps the range as dirty.
+    void InvalidateRangeFromGPU(VAddr address, size_t size);
+
     /// Evicts any images that overlap the unmapped range.
     void UnmapMemory(VAddr cpu_addr, size_t size);
 
@@ -136,6 +140,27 @@ public:
 
     /// Retrieves the depth target with specified properties
     [[nodiscard]] ImageView& FindDepthTarget(ImageId image_id, const ImageDesc& desc);
+
+    /// Calls func for each image that the GPU wrote after the buffer cache last copied it, and
+    /// that holds the newest contents of its memory.
+    template <typename Func>
+    void ForEachBufferStaleImage(VAddr address, size_t size, Func&& func) {
+        {
+            std::scoped_lock lk{buffer_stale_mutex};
+            if (!buffer_stale_ranges.Intersects(address, size)) {
+                return;
+            }
+        }
+        ForEachImageInRegion(address, size, [&](ImageId image_id, Image& image) {
+            if (True(image.flags & ImageFlagBits::BufferStale) &&
+                False(image.flags & ImageFlagBits::Dirty)) {
+                func(image_id, image);
+            }
+        });
+    }
+
+    /// Records that the buffer cache holds the image's contents.
+    void ClearBufferStale(Image& image);
 
     /// Links the stencil plane of a depth surface to its depth image.
     void AssociateStencil(ImageId depth_id, const ImageInfo& depth_info);
@@ -361,6 +386,9 @@ private:
 
     void MarkAsMaybeDirty(ImageId image_id, Image& image);
 
+    /// Records that the buffer cache's copy of the image's memory is now older than the image.
+    void MarkBufferStale(Image& image);
+
     void RegisterMeta(VAddr address, MetaDataInfo info);
     void UnregisterMeta(VAddr address, u64 owner_uid);
 
@@ -414,6 +442,8 @@ private:
     const bool readback_linear_images;
     std::mutex download_images_mutex;
     absl::flat_hash_map<VAddr, MetaDataInfo> surface_metas;
+    std::mutex buffer_stale_mutex; ///< Images are also freed when the guest unmaps memory
+    RangeSet buffer_stale_ranges;
 };
 
 } // namespace VideoCore
