@@ -88,6 +88,10 @@ static IR::Opcode Replace(IR::Opcode op) {
         return IR::Opcode::FPFrexpSig32;
     case IR::Opcode::FPFrexpExp64:
         return IR::Opcode::FPFrexpExp32;
+    case IR::Opcode::FPLdexp64:
+        return IR::Opcode::FPLdexp32;
+    case IR::Opcode::SelectF64:
+        return IR::Opcode::SelectF32;
     case IR::Opcode::FPOrdEqual64:
         return IR::Opcode::FPOrdEqual32;
     case IR::Opcode::FPUnordEqual64:
@@ -118,6 +122,8 @@ static IR::Opcode Replace(IR::Opcode op) {
         return IR::Opcode::FPIsInf32;
     case IR::Opcode::ConvertS32F64:
         return IR::Opcode::ConvertS32F32;
+    case IR::Opcode::ConvertU32F64:
+        return IR::Opcode::ConvertU32F32;
     case IR::Opcode::ConvertF64S32:
         return IR::Opcode::ConvertF32S32;
     case IR::Opcode::ConvertF64U32:

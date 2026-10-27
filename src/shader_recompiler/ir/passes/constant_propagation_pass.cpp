@@ -429,6 +429,7 @@ void ConstantPropagation(IR::Block& block, IR::Inst& inst) {
     case IR::Opcode::SelectU1:
     case IR::Opcode::SelectU32:
     case IR::Opcode::SelectF32:
+    case IR::Opcode::SelectF64:
         return FoldSelect(inst);
     case IR::Opcode::FPNeg32:
         FoldWhenAllImmediates(inst, [](f32 a) { return -a; });

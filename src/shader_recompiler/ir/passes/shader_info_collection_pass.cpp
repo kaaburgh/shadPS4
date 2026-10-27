@@ -111,6 +111,8 @@ void Visit(Info& info, const IR::Inst& inst) {
     case IR::Opcode::FPFract64:
     case IR::Opcode::FPFrexpSig64:
     case IR::Opcode::FPFrexpExp64:
+    case IR::Opcode::FPLdexp64:
+    case IR::Opcode::SelectF64:
     case IR::Opcode::FPOrdEqual64:
     case IR::Opcode::FPUnordEqual64:
     case IR::Opcode::FPOrdNotEqual64:
@@ -126,6 +128,7 @@ void Visit(Info& info, const IR::Inst& inst) {
     case IR::Opcode::FPIsNan64:
     case IR::Opcode::FPIsInf64:
     case IR::Opcode::ConvertS32F64:
+    case IR::Opcode::ConvertU32F64:
     case IR::Opcode::ConvertF32F64:
     case IR::Opcode::ConvertF64F32:
     case IR::Opcode::ConvertF64S32:

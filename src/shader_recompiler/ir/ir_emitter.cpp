@@ -906,6 +906,8 @@ Value IREmitter::Select(const U1& condition, const Value& true_value, const Valu
         return Inst(Opcode::SelectU32, condition, true_value, false_value);
     case Type::F32:
         return Inst(Opcode::SelectF32, condition, true_value, false_value);
+    case Type::F64:
+        return Inst(Opcode::SelectF64, condition, true_value, false_value);
     case Type::U64:
         return Inst(Opcode::SelectU64, condition, true_value, false_value);
     default:
@@ -1128,8 +1130,15 @@ F32 IREmitter::FPExp2(const F32& value) {
     return Inst<F32>(Opcode::FPExp2, value);
 }
 
-F32 IREmitter::FPLdexp(const F32& value, const U32& exp) {
-    return Inst<F32>(Opcode::FPLdexp, value, exp);
+F32F64 IREmitter::FPLdexp(const F32F64& value, const U32& exp) {
+    switch (value.Type()) {
+    case Type::F32:
+        return Inst<F32>(Opcode::FPLdexp32, value, exp);
+    case Type::F64:
+        return Inst<F64>(Opcode::FPLdexp64, value, exp);
+    default:
+        ThrowInvalidType(value.Type());
+    }
 }
 
 F32 IREmitter::FPLog2(const F32& value) {
@@ -1868,6 +1877,8 @@ U32U64 IREmitter::ConvertFToU(size_t bitsize, const F32F64& value) {
         switch (value.Type()) {
         case Type::F32:
             return Inst<U32>(Opcode::ConvertU32F32, value);
+        case Type::F64:
+            return Inst<U32>(Opcode::ConvertU32F64, value);
         default:
             ThrowInvalidType(value.Type());
         }
