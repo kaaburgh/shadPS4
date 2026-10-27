@@ -432,7 +432,8 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             }
             const auto vsharp = desc.GetSharp(*stage);
             if (vsharp.base_address != 0 && vsharp.GetSize() != 0) {
-                buffer_cache.SynchronizeBufferStaleImages(vsharp.base_address);
+                buffer_cache.SynchronizeBufferStaleImages(vsharp.base_address, vsharp.GetSize(),
+                                                          desc.is_written);
             }
         }
     }
@@ -1219,7 +1220,11 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
                "FillBuffer address and size must be a multiple of 4 bytes");
     if (!is_gds) {
         texture_cache.ClearMeta(address);
-        buffer_cache.SynchronizeBufferStaleImages(address);
+        // A copied image moves the fill to the GPU, so the images it covers are refreshed from
+        // the buffer cache instead of from the CPU write.
+        if (buffer_cache.SynchronizeBufferStaleImages(address, num_bytes, true)) {
+            texture_cache.InvalidateRangeFromGPU(address, num_bytes);
+        }
         if (!buffer_cache.IsRegionGpuModified(address, num_bytes)) {
             u32* buffer = std::bit_cast<u32*>(address);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);
@@ -1236,11 +1241,17 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
 }
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
+    bool copied_image = false;
     if (!src_gds) {
-        buffer_cache.SynchronizeBufferStaleImages(src);
+        copied_image |= buffer_cache.SynchronizeBufferStaleImages(src);
     }
     if (!dst_gds) {
-        buffer_cache.SynchronizeBufferStaleImages(dst);
+        copied_image |= buffer_cache.SynchronizeBufferStaleImages(dst, num_bytes, true);
+        // A copied image moves the copy to the GPU, so the images it covers are refreshed from
+        // the buffer cache instead of from the CPU write.
+        if (copied_image) {
+            texture_cache.InvalidateRangeFromGPU(dst, num_bytes);
+        }
     }
     if (!dst_gds && !buffer_cache.IsRegionGpuModified(dst, num_bytes)) {
         if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&

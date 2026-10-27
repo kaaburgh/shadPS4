@@ -117,6 +117,9 @@ public:
     /// Marks an image as dirty if it exists at the provided address.
     void InvalidateMemoryFromGPU(VAddr address, size_t max_size);
 
+    /// Marks every image that overlaps the range as dirty.
+    void InvalidateRangeFromGPU(VAddr address, size_t size);
+
     /// Evicts any images that overlap the unmapped range.
     void UnmapMemory(VAddr cpu_addr, size_t size);
 

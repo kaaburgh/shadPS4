@@ -449,10 +449,20 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
     return CopyImageToBuffer(image, arena, arena->Offset(device_addr));
 }
 
-void BufferCache::SynchronizeBufferStaleImages(VAddr device_addr) {
+bool BufferCache::SynchronizeBufferStaleImages(VAddr device_addr, u64 size, bool is_written) {
     boost::container::small_vector<ImageId, 4> image_ids;
-    texture_cache.ForEachBufferStaleImage(
-        device_addr, 1, [&](ImageId image_id, Image&) { image_ids.push_back(image_id); });
+    boost::container::small_vector<ImageId, 4> overwritten_ids;
+    texture_cache.ForEachBufferStaleImage(device_addr, is_written ? size : 1,
+                                          [&](ImageId image_id, Image& image) {
+                                              if (image.Overlaps(device_addr, 1)) {
+                                                  image_ids.push_back(image_id);
+                                              } else {
+                                                  overwritten_ids.push_back(image_id);
+                                              }
+                                          });
+    for (const ImageId image_id : overwritten_ids) {
+        texture_cache.ClearBufferStale(texture_cache.GetImage(image_id));
+    }
     for (const ImageId image_id : image_ids) {
         Image& image = texture_cache.GetImage(image_id);
         const VAddr image_addr = image.info.guest_address;
@@ -468,6 +478,7 @@ void BufferCache::SynchronizeBufferStaleImages(VAddr device_addr) {
         CopyImageToBuffer(image, arena, arena->Offset(image_addr));
         texture_cache.ClearBufferStale(image);
     }
+    return !image_ids.empty();
 }
 
 bool BufferCache::CopyImageToBuffer(Image& image, const Buffer* arena, u64 arena_offset) {

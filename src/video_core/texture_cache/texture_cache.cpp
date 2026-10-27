@@ -221,6 +221,11 @@ void TextureCache::InvalidateMemoryFromGPU(VAddr address, size_t max_size) {
     });
 }
 
+void TextureCache::InvalidateRangeFromGPU(VAddr address, size_t size) {
+    ForEachImageInRegion(address, size,
+                         [](ImageId, Image& image) { image.flags |= ImageFlagBits::GpuDirty; });
+}
+
 void TextureCache::UnmapMemory(VAddr cpu_addr, size_t size) {
     SmallVector<ImageId, 16> deleted_images;
     ForEachImageInRegion(cpu_addr, size, [&](ImageId id, Image&) { deleted_images.push_back(id); });
