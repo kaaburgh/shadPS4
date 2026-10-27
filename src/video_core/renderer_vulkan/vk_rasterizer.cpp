@@ -420,8 +420,8 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
 
     bool uses_dma = false;
 
-    // A buffer can start in memory that an image was rendered into. Copy such images before any
-    // image layout of this draw is recorded.
+    // A buffer can start in, or write over, memory that an image was rendered into. Copy such
+    // images before any image layout of this draw is recorded.
     for (const auto* stage : pipeline->GetStages()) {
         if (!stage) {
             continue;
@@ -432,7 +432,8 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
             }
             const auto vsharp = desc.GetSharp(*stage);
             if (vsharp.base_address != 0 && vsharp.GetSize() != 0) {
-                buffer_cache.SynchronizeBufferStaleImages(vsharp.base_address, vsharp.GetSize(),
+                const u64 size = memory->ClampRangeSize(vsharp.base_address, vsharp.GetSize());
+                buffer_cache.SynchronizeBufferStaleImages(vsharp.base_address, size,
                                                           desc.is_written);
             }
         }

@@ -451,18 +451,9 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
 
 bool BufferCache::SynchronizeBufferStaleImages(VAddr device_addr, u64 size, bool is_written) {
     boost::container::small_vector<ImageId, 4> image_ids;
-    boost::container::small_vector<ImageId, 4> overwritten_ids;
-    texture_cache.ForEachBufferStaleImage(device_addr, is_written ? size : 1,
-                                          [&](ImageId image_id, Image& image) {
-                                              if (image.Overlaps(device_addr, 1)) {
-                                                  image_ids.push_back(image_id);
-                                              } else {
-                                                  overwritten_ids.push_back(image_id);
-                                              }
-                                          });
-    for (const ImageId image_id : overwritten_ids) {
-        texture_cache.ClearBufferStale(texture_cache.GetImage(image_id));
-    }
+    texture_cache.ForEachBufferStaleImage(
+        device_addr, is_written ? size : 1,
+        [&](ImageId image_id, Image&) { image_ids.push_back(image_id); });
     for (const ImageId image_id : image_ids) {
         Image& image = texture_cache.GetImage(image_id);
         const VAddr image_addr = image.info.guest_address;
