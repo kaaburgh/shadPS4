@@ -420,6 +420,23 @@ bool Rasterizer::BindResources(const Pipeline* pipeline) {
 
     bool uses_dma = false;
 
+    // A buffer can start in memory that an image was rendered into. Copy such images before any
+    // image layout of this draw is recorded.
+    for (const auto* stage : pipeline->GetStages()) {
+        if (!stage) {
+            continue;
+        }
+        for (const auto& desc : stage->buffers) {
+            if (desc.IsSpecial()) {
+                continue;
+            }
+            const auto vsharp = desc.GetSharp(*stage);
+            if (vsharp.base_address != 0 && vsharp.GetSize() != 0) {
+                buffer_cache.SynchronizeBufferStaleImages(vsharp.base_address);
+            }
+        }
+    }
+
     // Bind resource buffers and textures.
     Shader::Backend::Bindings binding{};
     push_data = MakeUserData(liverpool->regs);
@@ -1202,6 +1219,7 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
                "FillBuffer address and size must be a multiple of 4 bytes");
     if (!is_gds) {
         texture_cache.ClearMeta(address);
+        buffer_cache.SynchronizeBufferStaleImages(address);
         if (!buffer_cache.IsRegionGpuModified(address, num_bytes)) {
             u32* buffer = std::bit_cast<u32*>(address);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);
@@ -1218,6 +1236,12 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
 }
 
 void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds) {
+    if (!src_gds) {
+        buffer_cache.SynchronizeBufferStaleImages(src);
+    }
+    if (!dst_gds) {
+        buffer_cache.SynchronizeBufferStaleImages(dst);
+    }
     if (!dst_gds && !buffer_cache.IsRegionGpuModified(dst, num_bytes)) {
         if (!src_gds && !buffer_cache.IsRegionGpuModified(src, num_bytes) &&
             !texture_cache.FindImageFromRange(src, num_bytes)) {

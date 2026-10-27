@@ -114,6 +114,10 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
         if (True(image.flags & ImageFlagBits::BufferStale) &&
             False(image.flags & ImageFlagBits::Dirty)) {
             buffer_cache.DiscardGpuModified(image.info.guest_address, download_size);
+            // Only mip 0 was written back.
+            if (image.info.resources.levels == 1) {
+                ClearBufferStale(image);
+            }
         }
     } else {
         scheduler.DeferPriorityOperation(

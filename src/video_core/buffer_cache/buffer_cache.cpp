@@ -214,7 +214,6 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
 
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         bool is_written, bool is_texel_buffer) {
-    SynchronizeBufferStaleImages(device_addr, size);
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
     if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size)) {
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
@@ -254,6 +253,18 @@ bool BufferCache::IsRegionGpuModified(VAddr addr, size_t size) {
 
 void BufferCache::DiscardGpuModified(VAddr device_addr, u64 size) {
     gpu_modified_ranges.Subtract(device_addr, size);
+    // The first and last page can also hold GPU writes outside the range. Download those before
+    // the pages become CPU-modified, or the next upload would overwrite them.
+    const auto download_edge = [this](VAddr start, VAddr end) {
+        if (start < end && IsRegionGpuModified(start, end - start)) {
+            DownloadMemory(GetArena(start >> block_shift, (end - 1) >> block_shift), start,
+                           end - start);
+        }
+    };
+    const VAddr end = device_addr + size;
+    download_edge(Common::AlignDown(device_addr, BYTES_PER_PAGE), device_addr);
+    download_edge(end, Common::AlignUp(end, BYTES_PER_PAGE));
+    memory_tracker->UnmarkRegionAsGpuModified(device_addr, size, true);
 }
 
 void BufferCache::SynchronizeDmaBuffers() {
@@ -438,10 +449,10 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
     return CopyImageToBuffer(image, arena, arena->Offset(device_addr));
 }
 
-void BufferCache::SynchronizeBufferStaleImages(VAddr device_addr, u64 size) {
+void BufferCache::SynchronizeBufferStaleImages(VAddr device_addr) {
     boost::container::small_vector<ImageId, 4> image_ids;
     texture_cache.ForEachBufferStaleImage(
-        device_addr, size, [&](ImageId image_id, Image&) { image_ids.push_back(image_id); });
+        device_addr, 1, [&](ImageId image_id, Image&) { image_ids.push_back(image_id); });
     for (const ImageId image_id : image_ids) {
         Image& image = texture_cache.GetImage(image_id);
         const VAddr image_addr = image.info.guest_address;

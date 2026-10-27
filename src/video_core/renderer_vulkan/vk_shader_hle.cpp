@@ -80,6 +80,8 @@ static bool ExecuteCopyShaderHLE(const Shader::Info& info, const AmdGpu::Compute
         }
 
         // Obtain buffers for the total source and destination ranges.
+        buffer_cache.SynchronizeBufferStaleImages(src_buf_sharp.base_address + src_offset_min);
+        buffer_cache.SynchronizeBufferStaleImages(dst_buf_sharp.base_address + dst_offset_min);
         const auto [src_buf, src_buf_offset] = buffer_cache.ObtainBuffer(
             src_buf_sharp.base_address + src_offset_min, src_offset_max - src_offset_min, false);
         const auto [dst_buf, dst_buf_offset] = buffer_cache.ObtainBuffer(
