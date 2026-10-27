@@ -109,6 +109,12 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
         download.Invalidate();
         Core::Memory::Instance()->TryWriteBacking(std::bit_cast<u8*>(image.info.guest_address),
                                                   download.mapped, download_size);
+        // Guest memory now holds the image, which is newer than the buffer cache's copy, so a
+        // CPU read must not download that copy over it.
+        if (True(image.flags & ImageFlagBits::BufferStale) &&
+            False(image.flags & ImageFlagBits::Dirty)) {
+            buffer_cache.DiscardGpuModified(image.info.guest_address, download_size);
+        }
     } else {
         scheduler.DeferPriorityOperation(
             [this, device_addr = image.info.guest_address, download, download_size] {
@@ -128,6 +134,37 @@ void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
     }
     image.flags |= ImageFlagBits::MaybeCpuDirty;
     UntrackImage(image_id);
+}
+
+void TextureCache::MarkBufferStale(Image& image) {
+    if (True(image.flags & ImageFlagBits::BufferStale) || image.info.num_samples > 1 ||
+        image.info.guest_address == 0) {
+        return;
+    }
+    image.flags |= ImageFlagBits::BufferStale;
+    std::scoped_lock lk{buffer_stale_mutex};
+    buffer_stale_ranges.Add(image.info.guest_address, image.info.guest_size);
+}
+
+void TextureCache::ClearBufferStale(Image& image) {
+    if (False(image.flags & ImageFlagBits::BufferStale)) {
+        return;
+    }
+    image.flags &= ~ImageFlagBits::BufferStale;
+    const VAddr address = image.info.guest_address;
+    const u64 size = image.info.guest_size;
+    // Keep the ranges of overlapping images that are still stale.
+    SmallVector<std::pair<VAddr, u64>, 4> stale_ranges;
+    ForEachImageInRegion(address, size, [&](ImageId, Image& other) {
+        if (True(other.flags & ImageFlagBits::BufferStale)) {
+            stale_ranges.emplace_back(other.info.guest_address, other.info.guest_size);
+        }
+    });
+    std::scoped_lock lk{buffer_stale_mutex};
+    buffer_stale_ranges.Subtract(address, size);
+    for (const auto& [stale_address, stale_size] : stale_ranges) {
+        buffer_stale_ranges.Add(stale_address, stale_size);
+    }
 }
 
 void TextureCache::InvalidateMemory(VAddr addr, size_t size) {
@@ -636,6 +673,9 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc) {
         }
     }
     UpdateImage(image_id);
+    if (desc.type == BindingType::Storage) {
+        MarkBufferStale(image);
+    }
     return image.FindView(desc.view_info);
 }
 
@@ -673,6 +713,7 @@ ImageView& TextureCache::FindRenderTarget(ImageId image_id, const ImageDesc& des
     }
     image.usage.render_target = 1u;
     UpdateImage(image_id);
+    MarkBufferStale(image);
 
     // Register meta data for this color buffer
     const VAddr cmask_addr = desc.info.meta_info.cmask_addr;
@@ -833,6 +874,7 @@ void TextureCache::RefreshImage(Image& image) {
     }
 
     runtime.UploadImage(&image, buffer, image_copies);
+    ClearBufferStale(image);
 }
 
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sharp,
@@ -875,6 +917,7 @@ void TextureCache::UnregisterImage(ImageId image_id) {
     Image& image = slot_images[image_id];
     ASSERT_MSG(True(image.flags & ImageFlagBits::Registered),
                "Trying to unregister an already unregistered image");
+    ClearBufferStale(image);
     image.flags &= ~ImageFlagBits::Registered;
     image_lru_cache.Free(image);
     total_used_memory -= Common::AlignUp(image.info.guest_size, 1024);

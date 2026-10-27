@@ -191,6 +191,9 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
         gpu_modified_ranges.Subtract(address, size);
     });
     if (total_size_bytes == 0) {
+        // Nothing GPU-written is left in the range, e.g. after DiscardGpuModified, so stop
+        // treating it as GPU-modified.
+        memory_tracker->UnmarkRegionAsGpuModified(device_addr, size, false);
         return;
     }
     const auto download = staging_pool.Request(total_size_bytes, VideoCore::MemoryType::HostCached);
@@ -211,6 +214,7 @@ void BufferCache::DownloadMemory(const Buffer* arena, VAddr device_addr, u64 siz
 
 std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 size,
                                                         bool is_written, bool is_texel_buffer) {
+    SynchronizeBufferStaleImages(device_addr, size);
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
     if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size)) {
         const auto [data, offset] = stream_buffer.Map(size, instance.UniformMinAlignment());
@@ -246,6 +250,10 @@ bool BufferCache::IsRegionCpuModified(VAddr addr, size_t size) {
 
 bool BufferCache::IsRegionGpuModified(VAddr addr, size_t size) {
     return memory_tracker->IsRegionGpuModified(addr, size);
+}
+
+void BufferCache::DiscardGpuModified(VAddr device_addr, u64 size) {
+    gpu_modified_ranges.Subtract(device_addr, size);
 }
 
 void BufferCache::SynchronizeDmaBuffers() {
@@ -427,7 +435,31 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
     ASSERT_MSG(device_addr == image.info.guest_address,
                "Texel buffer aliases image subresources {:x} : {:x}", device_addr,
                image.info.guest_address);
-    const u64 arena_offset = arena->Offset(device_addr);
+    return CopyImageToBuffer(image, arena, arena->Offset(device_addr));
+}
+
+void BufferCache::SynchronizeBufferStaleImages(VAddr device_addr, u64 size) {
+    boost::container::small_vector<ImageId, 4> image_ids;
+    texture_cache.ForEachBufferStaleImage(
+        device_addr, size, [&](ImageId image_id, Image&) { image_ids.push_back(image_id); });
+    for (const ImageId image_id : image_ids) {
+        Image& image = texture_cache.GetImage(image_id);
+        const VAddr image_addr = image.info.guest_address;
+        const u32 image_size = image.info.guest_size;
+        const u64 first_block = image_addr >> block_shift;
+        const u64 last_block = (image_addr + image_size - 1) >> block_shift;
+        const auto* arena = GetArena(first_block, last_block);
+        EnsureResident(arena, first_block, last_block);
+        // Upload what the CPU wrote to the range before the image overwrites its texels. The
+        // range becomes GPU-modified, so later CPU reads download the image.
+        SynchronizeMemory(arena, image_addr, image_size, true, false);
+        gpu_modified_ranges.Add(image_addr, image_size);
+        CopyImageToBuffer(image, arena, arena->Offset(image_addr));
+        texture_cache.ClearBufferStale(image);
+    }
+}
+
+bool BufferCache::CopyImageToBuffer(Image& image, const Buffer* arena, u64 arena_offset) {
     boost::container::small_vector<vk::BufferImageCopy, 8> buffer_copies;
     for (u32 mip = 0; mip < image.info.resources.levels; mip++) {
         const auto& mip_info = image.info.mips_layout[mip];
