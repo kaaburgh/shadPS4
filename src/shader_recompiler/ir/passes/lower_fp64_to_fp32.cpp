@@ -20,13 +20,15 @@ static IR::F32 PackedF64ToF32(IR::IREmitter& ir, const IR::Value& packed) {
     const IR::U32 mantissa_lo{ir.BitFieldExtract(lo, ir.Imm32(29), ir.Imm32(3))};
     const IR::U32 mantissa{
         ir.BitwiseOr(ir.ShiftLeftLogical(mantissa_hi, ir.Imm32(3)), mantissa_lo)};
-    // Values below the f32 range flush to zero, values above it become infinity.
     const IR::U32 exp_f32{ir.ISub(exp, ir.Imm32(F64ToF32Exp))};
+    const IR::U1 is_subnorm{ir.IEqual(exp, ir.Imm32(0))};
     const IR::U1 is_infnan{ir.IEqual(exp, ir.Imm32(0x7ff))};
-    const IR::U1 underflow{ir.ILessThanEqual(exp_f32, ir.Imm32(0), true)};
+    const IR::U1 underflow{
+        ir.LogicalAnd(ir.ILessThanEqual(exp_f32, ir.Imm32(0), true), ir.LogicalNot(is_subnorm))};
     const IR::U1 overflow{ir.LogicalAnd(ir.IGreaterThanEqual(exp_f32, ir.Imm32(0xff), true),
                                         ir.LogicalNot(is_infnan))};
-    const IR::U32 exp_if_subnorm{ir.Select(underflow, ir.Imm32(0), exp_f32)};
+    const IR::U32 exp_if_subnorm{
+        ir.Select(ir.LogicalOr(is_subnorm, underflow), ir.Imm32(0), exp_f32)};
     const IR::U32 exp_if_infnan{
         ir.Select(ir.LogicalOr(is_infnan, overflow), ir.Imm32(0xff), exp_if_subnorm)};
     const IR::U32 mantissa_in_range{
