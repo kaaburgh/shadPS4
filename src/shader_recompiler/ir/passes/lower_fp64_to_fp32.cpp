@@ -20,13 +20,20 @@ static IR::F32 PackedF64ToF32(IR::IREmitter& ir, const IR::Value& packed) {
     const IR::U32 mantissa_lo{ir.BitFieldExtract(lo, ir.Imm32(29), ir.Imm32(3))};
     const IR::U32 mantissa{
         ir.BitwiseOr(ir.ShiftLeftLogical(mantissa_hi, ir.Imm32(3)), mantissa_lo)};
-    const IR::U32 exp_if_subnorm{
-        ir.Select(ir.IEqual(exp, ir.Imm32(0)), ir.Imm32(0), ir.IAdd(exp, ir.Imm32(F64ToF32Exp)))};
+    // Values below the f32 range flush to zero, values above it become infinity.
+    const IR::U32 exp_f32{ir.ISub(exp, ir.Imm32(F64ToF32Exp))};
+    const IR::U1 is_infnan{ir.IEqual(exp, ir.Imm32(0x7ff))};
+    const IR::U1 underflow{ir.ILessThanEqual(exp_f32, ir.Imm32(0), true)};
+    const IR::U1 overflow{ir.LogicalAnd(ir.IGreaterThanEqual(exp_f32, ir.Imm32(0xff), true),
+                                        ir.LogicalNot(is_infnan))};
+    const IR::U32 exp_if_subnorm{ir.Select(underflow, ir.Imm32(0), exp_f32)};
     const IR::U32 exp_if_infnan{
-        ir.Select(ir.IEqual(exp, ir.Imm32(0x7ff)), ir.Imm32(0xff), exp_if_subnorm)};
-    const IR::U32 result{
-        ir.BitwiseOr(ir.ShiftLeftLogical(sign, ir.Imm32(31)),
-                     ir.BitwiseOr(ir.ShiftLeftLogical(exp_if_infnan, ir.Imm32(23)), mantissa))};
+        ir.Select(ir.LogicalOr(is_infnan, overflow), ir.Imm32(0xff), exp_if_subnorm)};
+    const IR::U32 mantissa_in_range{
+        ir.Select(ir.LogicalOr(underflow, overflow), ir.Imm32(0), mantissa)};
+    const IR::U32 result{ir.BitwiseOr(
+        ir.ShiftLeftLogical(sign, ir.Imm32(31)),
+        ir.BitwiseOr(ir.ShiftLeftLogical(exp_if_infnan, ir.Imm32(23)), mantissa_in_range))};
     return ir.BitCast<IR::F32>(result);
 }
 
@@ -38,7 +45,7 @@ IR::Value F32ToPackedF64(IR::IREmitter& ir, const IR::Value& raw) {
     const IR::U32 mantissa_hi{ir.BitFieldExtract(mantissa, ir.Imm32(3), ir.Imm32(20))};
     const IR::U32 mantissa_lo{ir.BitFieldExtract(mantissa, ir.Imm32(0), ir.Imm32(3))};
     const IR::U32 exp_if_subnorm{
-        ir.Select(ir.IEqual(exp, ir.Imm32(0)), ir.Imm32(0), ir.IAdd(exp, ir.Imm32(F32ToF64Exp)))};
+        ir.Select(ir.IEqual(exp, ir.Imm32(0)), ir.Imm32(0), ir.ISub(exp, ir.Imm32(F32ToF64Exp)))};
     const IR::U32 exp_if_infnan{
         ir.Select(ir.IEqual(exp, ir.Imm32(0xff)), ir.Imm32(0x7ff), exp_if_subnorm)};
     const IR::U32 lo{ir.ShiftLeftLogical(mantissa_lo, ir.Imm32(29))};
