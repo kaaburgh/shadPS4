@@ -545,7 +545,7 @@ void ConstantPropagation(IR::Block& block, IR::Inst& inst) {
                 UNREACHABLE_MSG("Undefined result in {}({}, {}, {})", IR::Opcode::BitFieldUExtract,
                                 base, shift, count);
             }
-            return (base >> shift) & ((1U << count) - 1);
+            return (base >> shift) & (count >= 32 ? ~0U : (1U << count) - 1);
         });
         return;
     case IR::Opcode::BitFieldSExtract:

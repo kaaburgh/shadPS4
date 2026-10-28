@@ -153,6 +153,12 @@ static void Lower(IR::Block& block, IR::Inst& inst) {
     }
     default:
         inst.ReplaceOpcode(Replace(inst.GetOpcode()));
+        for (size_t i = 0; i < inst.NumArgs(); ++i) {
+            const IR::Value arg{inst.Arg(i)};
+            if (arg.IsImmediate() && arg.Type() == IR::Type::F64) {
+                inst.SetArg(i, IR::Value{static_cast<f32>(arg.F64())});
+            }
+        }
         break;
     }
 }
