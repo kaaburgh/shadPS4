@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 shadPS4 Emulator Project
+SPDX-License-Identifier: GPL-2.0-or-later
+-->
+
 # Third batch — 10 game-oriented shadPS4 tasks, synthetic verification first
 
 Prepared **2026-10-13**. **Planning only**: no code changes, builds, emulator runs, homebrew tests, or game compatibility improvements are claimed here.
