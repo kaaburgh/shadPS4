@@ -198,6 +198,7 @@ Id EmitCompositeShuffleF32x4(EmitContext& ctx, Id composite1, Id composite2, u32
 Id EmitSelectU1(EmitContext& ctx, Id cond, Id true_value, Id false_value);
 Id EmitSelectU32(EmitContext& ctx, Id cond, Id true_value, Id false_value);
 Id EmitSelectF32(EmitContext& ctx, Id cond, Id true_value, Id false_value);
+Id EmitSelectF64(EmitContext& ctx, Id cond, Id true_value, Id false_value);
 Id EmitSelectU64(EmitContext& ctx, Id cond, Id true_value, Id false_value);
 Id EmitBitCastU16F16(EmitContext& ctx, Id value);
 Id EmitBitCastU32F32(EmitContext& ctx, Id value);
@@ -259,7 +260,8 @@ Id EmitFPSin(EmitContext& ctx, Id value);
 Id EmitFPCos(EmitContext& ctx, Id value);
 Id EmitFPExp2(EmitContext& ctx, Id value);
 Id EmitFPPow(EmitContext& ctx, Id x, Id y);
-Id EmitFPLdexp(EmitContext& ctx, Id value, Id exp);
+Id EmitFPLdexp32(EmitContext& ctx, Id value, Id exp);
+Id EmitFPLdexp64(EmitContext& ctx, Id value, Id exp);
 Id EmitFPLog2(EmitContext& ctx, Id value);
 Id EmitFPRecip32(EmitContext& ctx, Id value);
 Id EmitFPRecip64(EmitContext& ctx, Id value);

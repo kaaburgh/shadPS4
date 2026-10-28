@@ -188,6 +188,7 @@ OPCODE(CompositeShuffleF32x4,                               F32x4,          F32x
 OPCODE(SelectU1,                                            U1,             U1,             U1,             U1,                                             )
 OPCODE(SelectU32,                                           U32,            U1,             U32,            U32,                                            )
 OPCODE(SelectF32,                                           F32,            U1,             F32,            F32,                                            )
+OPCODE(SelectF64,                                           F64,            U1,             F64,            F64,                                            )
 OPCODE(SelectU64,                                           U64,            U1,             U64,            U64,                                            )
 
 // Bitwise conversions
@@ -262,7 +263,8 @@ OPCODE(FPSqrt,                                              F32,            F32,
 OPCODE(FPSin,                                               F32,            F32,                                                                            )
 OPCODE(FPExp2,                                              F32,            F32,                                                                            )
 OPCODE(FPPow,                                               F32,            F32,            F32,                                                            )
-OPCODE(FPLdexp,                                             F32,            F32,            U32,                                                            )
+OPCODE(FPLdexp32,                                           F32,            F32,            U32,                                                            )
+OPCODE(FPLdexp64,                                           F64,            F64,            U32,                                                            )
 OPCODE(FPCos,                                               F32,            F32,                                                                            )
 OPCODE(FPLog2,                                              F32,            F32,                                                                            )
 OPCODE(FPSaturate32,                                        F32,            F32,                                                                            )
@@ -401,6 +403,7 @@ OPCODE(LogicalNot,                                          U1,             U1, 
 OPCODE(ConvertS32F32,                                       U32,            F32,                                                                            )
 OPCODE(ConvertS32F64,                                       U32,            F64,                                                                            )
 OPCODE(ConvertU32F32,                                       U32,            F32,                                                                            )
+OPCODE(ConvertU32F64,                                       U32,            F64,                                                                            )
 OPCODE(ConvertF16F32,                                       F16,            F32,                                                                            )
 OPCODE(ConvertF32F16,                                       F32,            F16,                                                                            )
 OPCODE(ConvertF32F64,                                       F32,            F64,                                                                            )

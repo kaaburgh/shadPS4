@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <algorithm>
+#include <cmath>
 #include <limits>
 #include "shader_recompiler/frontend/opcodes.h"
 #include "shader_recompiler/frontend/translate/translate.h"
@@ -96,6 +98,8 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
         return V_SUBBREV_U32(inst);
     case Opcode::V_LDEXP_F32:
         return V_LDEXP_F32(inst);
+    case Opcode::V_LDEXP_F64:
+        return V_LDEXP_F64(inst);
     case Opcode::V_CVT_PKNORM_U16_F32:
         return V_CVT_PKNORM_U16_F32(inst);
     case Opcode::V_CVT_PKNORM_I16_F32:
@@ -120,6 +124,8 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
         return V_READFIRSTLANE_B32(inst);
     case Opcode::V_CVT_I32_F64:
         return V_CVT_I32_F64(inst);
+    case Opcode::V_CVT_U32_F64:
+        return V_CVT_U32_F64(inst);
     case Opcode::V_CVT_F64_I32:
         return V_CVT_F64_I32(inst);
     case Opcode::V_CVT_F64_U32:
@@ -158,6 +164,10 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
         return V_TRUNC_F64(inst);
     case Opcode::V_FLOOR_F64:
         return V_FLOOR_F64(inst);
+    case Opcode::V_CEIL_F64:
+        return V_CEIL_F64(inst);
+    case Opcode::V_RNDNE_F64:
+        return V_RNDNE_F64(inst);
     case Opcode::V_FRACT_F32:
         return V_FRACT_F32(inst);
     case Opcode::V_TRUNC_F32:
@@ -395,14 +405,22 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
         return V_CMP_U64(ConditionOp::EQ, true, true, inst);
 
         //     V_CMP_{OP8}_U64
-    case Opcode::V_CMP_EQ_U64:
-        return V_CMP_U64(ConditionOp::EQ, false, false, inst);
-    case Opcode::V_CMP_NE_U64:
-        return V_CMP_U64(ConditionOp::LG, false, false, inst);
-    case Opcode::V_CMP_GT_U64:
-        return V_CMP_U64(ConditionOp::GT, false, false, inst);
+    case Opcode::V_CMP_F_U64:
+        return V_CMP_U64(ConditionOp::F, false, false, inst);
     case Opcode::V_CMP_LT_U64:
         return V_CMP_U64(ConditionOp::LT, false, false, inst);
+    case Opcode::V_CMP_EQ_U64:
+        return V_CMP_U64(ConditionOp::EQ, false, false, inst);
+    case Opcode::V_CMP_LE_U64:
+        return V_CMP_U64(ConditionOp::LE, false, false, inst);
+    case Opcode::V_CMP_GT_U64:
+        return V_CMP_U64(ConditionOp::GT, false, false, inst);
+    case Opcode::V_CMP_NE_U64:
+        return V_CMP_U64(ConditionOp::LG, false, false, inst);
+    case Opcode::V_CMP_GE_U64:
+        return V_CMP_U64(ConditionOp::GE, false, false, inst);
+    case Opcode::V_CMP_TRU_U64:
+        return V_CMP_U64(ConditionOp::TRU, false, false, inst);
 
         //     V_CMPX_{OP8}_U64
     case Opcode::V_CMPX_EQ_U64:
@@ -492,6 +510,10 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
         return V_MUL_LO_U32(inst);
     case Opcode::V_MUL_HI_I32:
         return V_MUL_HI_U32(true, inst);
+    case Opcode::V_MUL_HI_I32_I24:
+        return V_MUL_HI_I32_I24(inst, true);
+    case Opcode::V_MUL_HI_U32_U24:
+        return V_MUL_HI_I32_I24(inst, false);
     case Opcode::V_MAD_U64_U32:
         return V_MAD_U64_U32(inst);
     case Opcode::V_LSHRREV_B16:
@@ -632,6 +654,14 @@ void Translator::V_MUL_I32_I24(const GcnInst& inst, bool is_signed) {
     const IR::U32 src1{
         ir.BitFieldExtract(GetSrc(inst.src[1]), ir.Imm32(0), ir.Imm32(24), is_signed)};
     SetDst(inst.dst[0], ir.IMul(src0, src1));
+}
+
+void Translator::V_MUL_HI_I32_I24(const GcnInst& inst, bool is_signed) {
+    const IR::U32 src0{
+        ir.BitFieldExtract(GetSrc(inst.src[0]), ir.Imm32(0), ir.Imm32(24), is_signed)};
+    const IR::U32 src1{
+        ir.BitFieldExtract(GetSrc(inst.src[1]), ir.Imm32(0), ir.Imm32(24), is_signed)};
+    SetDst(inst.dst[0], ir.IMulHi(src0, src1, is_signed));
 }
 
 void Translator::V_MIN_F32(const GcnInst& inst, bool is_legacy) {
@@ -837,6 +867,12 @@ void Translator::V_LDEXP_F32(const GcnInst& inst) {
     SetDst(inst.dst[0], ir.FPLdexp(src0, src1));
 }
 
+void Translator::V_LDEXP_F64(const GcnInst& inst) {
+    const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
+    const IR::U32 src1{GetSrc(inst.src[1])};
+    SetDst64(inst.dst[0], ir.FPLdexp(src0, src1));
+}
+
 void Translator::V_CVT_PKNORM_U16_F32(const GcnInst& inst) {
     const IR::Value vec_f32 =
         ir.CompositeConstruct(GetSrc<IR::F32>(inst.src[0]), GetSrc<IR::F32>(inst.src[1]));
@@ -849,9 +885,33 @@ void Translator::V_CVT_PKNORM_I16_F32(const GcnInst& inst) {
     SetDst(inst.dst[0], ir.Pack2x16(AmdGpu::NumberFormat::Snorm, vec_f32));
 }
 
+// Rounds value toward zero to a value that f16 represents exactly, so that the round-to-nearest
+// conversion of PackHalf2x16 gives the round-toward-zero result of V_CVT_PKRTZ_F16_F32.
+IR::F32 Translator::TruncateToF16(const IR::F32& value) {
+    const IR::U32 bits{ir.BitCast<IR::U32>(value)};
+    const IR::U32 magnitude{ir.BitwiseAnd(bits, ir.Imm32(0x7FFFFFFFu))};
+    // Normal f16 range: drop the 13 mantissa bits that f16 does not have.
+    const IR::U32 normal_bits{ir.BitwiseAnd(bits, ir.Imm32(0xFFFFE000u))};
+    const IR::F32 normal{ir.BitCast<IR::F32>(normal_bits)};
+    // f16 denormals are multiples of 2^-24.
+    const IR::F32 denormal{
+        ir.FPMul(ir.FPTrunc(ir.FPMul(value, ir.Imm32(16777216.0f))), ir.Imm32(1.0f / 16777216.0f))};
+    // Finite values beyond the f16 range become its largest value, 65504.
+    const IR::U32 largest_bits{
+        ir.BitwiseOr(ir.BitwiseAnd(bits, ir.Imm32(0x80000000u)), ir.Imm32(0x477FE000u))};
+    const IR::F32 largest{ir.BitCast<IR::F32>(largest_bits)};
+    IR::F32 result{
+        ir.Select(ir.ILessThan(magnitude, ir.Imm32(0x38800000u), false), denormal, normal)};
+    result = IR::F32{
+        ir.Select(ir.IGreaterThan(magnitude, ir.Imm32(0x477FE000u), false), largest, result)};
+    // Infinities and NaNs convert as they are.
+    return IR::F32{
+        ir.Select(ir.IGreaterThanEqual(magnitude, ir.Imm32(0x7F800000u), false), value, result)};
+}
+
 void Translator::V_CVT_PKRTZ_F16_F32(const GcnInst& inst) {
-    const IR::Value vec_f32 =
-        ir.CompositeConstruct(GetSrc<IR::F32>(inst.src[0]), GetSrc<IR::F32>(inst.src[1]));
+    const IR::Value vec_f32 = ir.CompositeConstruct(TruncateToF16(GetSrc<IR::F32>(inst.src[0])),
+                                                    TruncateToF16(GetSrc<IR::F32>(inst.src[1])));
     SetDst(inst.dst[0], ir.Pack2x16(AmdGpu::NumberFormat::Float, vec_f32));
 }
 
@@ -909,6 +969,11 @@ void Translator::V_MOV(const GcnInst& inst) {
 void Translator::V_CVT_I32_F64(const GcnInst& inst) {
     const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
     SetDst(inst.dst[0], ir.ConvertFToS(32, src0));
+}
+
+void Translator::V_CVT_U32_F64(const GcnInst& inst) {
+    const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
+    SetDst(inst.dst[0], ir.ConvertFToU(32, src0));
 }
 
 void Translator::V_CVT_F64_I32(const GcnInst& inst) {
@@ -1017,9 +1082,23 @@ void Translator::V_FLOOR_F64(const GcnInst& inst) {
     SetDst64(inst.dst[0], ir.FPFloor(src0));
 }
 
+void Translator::V_CEIL_F64(const GcnInst& inst) {
+    const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
+    SetDst64(inst.dst[0], ir.FPCeil(src0));
+}
+
+void Translator::V_RNDNE_F64(const GcnInst& inst) {
+    const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
+    SetDst64(inst.dst[0], ir.FPRoundEven(src0));
+}
+
 void Translator::V_FRACT_F32(const GcnInst& inst) {
     const IR::F32 src0{GetSrc<IR::F32>(inst.src[0])};
-    SetDst(inst.dst[0], ir.FPFract(src0));
+    // GCN returns the largest value below 1.0 where x - floor(x) rounds to 1.0.
+    const IR::F32 fract{ir.FPFract(src0)};
+    const IR::F32 below_one{ir.Imm32(std::nextafter(1.0f, 0.0f))};
+    SetDst(inst.dst[0],
+           IR::F32{ir.Select(ir.FPGreaterThanEqual(fract, ir.Imm32(1.0f)), below_one, fract)});
 }
 
 void Translator::V_TRUNC_F32(const GcnInst& inst) {
@@ -1182,7 +1261,11 @@ void Translator::V_FREXP_MANT_F64(const GcnInst& inst) {
 
 void Translator::V_FRACT_F64(const GcnInst& inst) {
     const IR::F64 src0{GetSrc64<IR::F64>(inst.src[0])};
-    SetDst64(inst.dst[0], ir.FPFract(src0));
+    // GCN returns the largest value below 1.0 where x - floor(x) rounds to 1.0.
+    const IR::F64 fract{ir.FPFract(src0)};
+    const IR::F64 below_one{ir.Imm64(std::nextafter(1.0, 0.0))};
+    SetDst64(inst.dst[0],
+             IR::F64{ir.Select(ir.FPGreaterThanEqual(fract, ir.Imm64(1.0)), below_one, fract)});
 }
 
 void Translator::V_FREXP_EXP_I32_F32(const GcnInst& inst) {
@@ -1439,15 +1522,23 @@ void Translator::V_CUBEMA_F32(const GcnInst& inst) {
     SetDst(inst.dst[0], ir.CubeFaceMajorAxis(x, y, z));
 }
 
+// GCN bitfields end at bit 31: offset + width beyond 32 extracts the bits up to 31, where
+// OpBitField*Extract is undefined.
+IR::U32 Translator::ClampFieldWidth(const IR::U32& offset, const IR::U32& width) {
+    return ir.UMin(width, ir.ISub(ir.Imm32(32), offset));
+}
+
 void Translator::V_BFE_U32(bool is_signed, const GcnInst& inst) {
     const IR::U32 src0{GetSrc(inst.src[0])};
     IR::U32 src1{GetSrc(inst.src[1])};
     IR::U32 src2{GetSrc(inst.src[2])};
-    if (!src1.IsImmediate()) {
+    if (src1.IsImmediate() && src2.IsImmediate()) {
+        const u32 offset = src1.U32() & 0x1F;
+        src1 = ir.Imm32(offset);
+        src2 = ir.Imm32(std::min(src2.U32() & 0x1F, 32 - offset));
+    } else {
         src1 = ir.BitwiseAnd(src1, ir.Imm32(0x1F));
-    }
-    if (!src2.IsImmediate()) {
-        src2 = ir.BitwiseAnd(src2, ir.Imm32(0x1F));
+        src2 = ClampFieldWidth(src1, ir.BitwiseAnd(src2, ir.Imm32(0x1F)));
     }
     SetDst(inst.dst[0], ir.BitFieldExtract(src0, src1, src2, is_signed));
 }

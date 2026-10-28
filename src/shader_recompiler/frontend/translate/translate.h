@@ -99,15 +99,17 @@ public:
     void S_CSELECT_B64(const GcnInst& inst);
     void S_AND_B32(NegateMode negate, const GcnInst& inst);
     void S_AND_B64(NegateMode negate, const GcnInst& inst);
-    void S_OR_B32(const GcnInst& inst);
+    void S_OR_B32(NegateMode negate, const GcnInst& inst);
     void S_OR_B64(NegateMode negate, bool is_xor, const GcnInst& inst);
     void S_XOR_B32(const GcnInst& inst);
     void S_LSHL_B32(const GcnInst& inst);
     void S_LSHL_B64(const GcnInst& inst);
+    void S_LSHR_B64(const GcnInst& inst);
     void S_LSHR_B32(const GcnInst& inst);
     void S_ASHR_I32(const GcnInst& inst);
     void S_ASHR_I64(const GcnInst& inst);
     void S_BFM_B32(const GcnInst& inst);
+    void S_BFM_B64(const GcnInst& inst);
     void S_MUL_I32(const GcnInst& inst);
     void S_BFE(const GcnInst& inst, bool is_signed);
     void S_BFE_I32(const GcnInst& inst);
@@ -130,6 +132,8 @@ public:
     void S_FF1_I32_B32(const GcnInst& inst);
     void S_FF1_I32_B64(const GcnInst& inst);
     void S_FLBIT_I32_B32(const GcnInst& inst);
+    void S_FLBIT_I32(const GcnInst& inst);
+    void S_SEXT_I32(const GcnInst& inst, u32 bits);
     void S_FLBIT_I32_B64(const GcnInst& inst);
     void S_BITSET_B32(const GcnInst& inst, u32 bit_value);
     void S_BITSET_B64(const GcnInst& inst, u32 bit_value);
@@ -165,6 +169,7 @@ public:
     void V_MAC_LEGACY_F32(const GcnInst& inst);
     void V_MAD_LEGACY_F32(const GcnInst& inst);
     void V_MUL_I32_I24(const GcnInst& inst, bool is_signed);
+    void V_MUL_HI_I32_I24(const GcnInst& inst, bool is_signed);
     void V_MIN_F32(const GcnInst& inst, bool is_legacy = false);
     void V_MAX_F32(const GcnInst& inst, bool is_legacy = false);
     void V_MIN_I32(const GcnInst& inst);
@@ -190,6 +195,7 @@ public:
     void V_SUBB_U32(const GcnInst& inst);
     void V_SUBBREV_U32(const GcnInst& inst);
     void V_LDEXP_F32(const GcnInst& inst);
+    void V_LDEXP_F64(const GcnInst& inst);
     void V_CVT_PKNORM_U16_F32(const GcnInst& inst);
     void V_CVT_PKNORM_I16_F32(const GcnInst& inst);
     void V_CVT_PKRTZ_F16_F32(const GcnInst& inst);
@@ -203,6 +209,7 @@ public:
     void V_MOV(const GcnInst& inst);
     void V_READFIRSTLANE_B32(const GcnInst& inst);
     void V_CVT_I32_F64(const GcnInst& inst);
+    void V_CVT_U32_F64(const GcnInst& inst);
     void V_CVT_F64_I32(const GcnInst& inst);
     void V_CVT_F64_U32(const GcnInst& inst);
     void V_CVT_F32_I32(const GcnInst& inst);
@@ -219,6 +226,8 @@ public:
     void V_CVT_F32_UBYTE(u32 index, const GcnInst& inst);
     void V_TRUNC_F64(const GcnInst& inst);
     void V_FLOOR_F64(const GcnInst& inst);
+    void V_CEIL_F64(const GcnInst& inst);
+    void V_RNDNE_F64(const GcnInst& inst);
     void V_FRACT_F32(const GcnInst& inst);
     void V_TRUNC_F32(const GcnInst& inst);
     void V_CEIL_F32(const GcnInst& inst);
@@ -382,6 +391,9 @@ private:
     IR::U32 GetCarryIn(const GcnInst& inst);
     void SetCarryOut(const GcnInst& inst, const IR::U1& carry);
     IR::F32 LegacyMul(const IR::F32& a, const IR::F32& b);
+    IR::U32 ClampFieldWidth(const IR::U32& offset, const IR::U32& width);
+    IR::F32 TruncateToF16(const IR::F32& value);
+    IR::U32 LdsAppendConsume(u32 address, bool consume);
     IR::U32 VMovRelSHelper(u32 src_vgprno, const IR::U32 m0);
     void VMovRelDHelper(u32 dst_vgprno, const IR::U32 src_val, const IR::U32 m0);
 
