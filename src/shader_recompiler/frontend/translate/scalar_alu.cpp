@@ -112,6 +112,8 @@ void Translator::EmitScalarAlu(const GcnInst& inst) {
             break;
         case Opcode::S_BREV_B32:
             return S_BREV_B32(inst);
+        case Opcode::S_BREV_B64:
+            return S_BREV_B64(inst);
         case Opcode::S_BCNT1_I32_B32:
             return S_BCNT1_I32_B32(inst);
         case Opcode::S_BCNT1_I32_B64:
@@ -579,6 +581,13 @@ void Translator::S_NOT_B64(const GcnInst& inst) {
 
 void Translator::S_BREV_B32(const GcnInst& inst) {
     SetDst(inst.dst[0], ir.BitReverse(GetSrc(inst.src[0])));
+}
+
+void Translator::S_BREV_B64(const GcnInst& inst) {
+    const IR::Value src0{ir.UnpackUint2x32(GetSrc64(inst.src[0]))};
+    const IR::U32 lo{ir.BitReverse(IR::U32{ir.CompositeExtract(src0, 1)})};
+    const IR::U32 hi{ir.BitReverse(IR::U32{ir.CompositeExtract(src0, 0)})};
+    SetDst64(inst.dst[0], ir.PackUint2x32(ir.CompositeConstruct(lo, hi)));
 }
 
 void Translator::S_BCNT1_I32_B32(const GcnInst& inst) {
