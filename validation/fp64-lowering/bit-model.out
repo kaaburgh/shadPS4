@@ -1,0 +1,42 @@
++0                                 f64 0000000000000000 (0            ) -> PR 00000000 (0            ) ref 00000000 ok | base 00000000 bias-only 00000000
+-0                                 f64 8000000000000000 (-0           ) -> PR 80000000 (-0           ) ref 80000000 ok | base 80000000 bias-only 80000000
+f64 min denormal                   f64 0000000000000001 (4.94066e-324 ) -> PR 00000000 (0            ) ref 00000000 ok | base 00000000 bias-only 00000000
+-f64 max denormal                  f64 800fffffffffffff (-2.22507e-308) -> PR 807fffff (-1.17549e-38 ) ref 80000000 MISMATCH | base 807fffff bias-only 807fffff
+f64 min normal (exp 1)             f64 0010000000000000 (2.22507e-308 ) -> PR 00000000 (0            ) ref 00000000 ok | base c0800000 bias-only 40800000
+exp 896, 2^-127                    f64 3800000000000000 (5.87747e-39  ) -> PR 00000000 (0            ) ref 00000000 ok | base 80000000 bias-only 00000000
+exp 896 max mant                   f64 380fffffffffffff (1.17549e-38  ) -> PR 00000000 (0            ) ref 00000000 ok | base 807fffff bias-only 007fffff
+-exp 896                           f64 b800000000000000 (-5.87747e-39 ) -> PR 80000000 (-0           ) ref 80000000 ok | base 80000000 bias-only 80000000
+exp 897, FLT_MIN                   f64 3810000000000000 (1.17549e-38  ) -> PR 00800000 (1.17549e-38  ) ref 00800000 ok | base 80800000 bias-only 00800000
+-exp 897, -FLT_MIN                 f64 b810000000000000 (-1.17549e-38 ) -> PR 80800000 (-1.17549e-38 ) ref 80800000 ok | base 80800000 bias-only 80800000
+exp 897 max mant                   f64 381fffffffffffff (2.35099e-38  ) -> PR 00ffffff (2.35099e-38  ) ref 00ffffff ok | base 80ffffff bias-only 00ffffff
+exp 1150, 2^127                    f64 47e0000000000000 (1.70141e+38  ) -> PR 7f000000 (1.70141e+38  ) ref 7f000000 ok | base ff000000 bias-only 7f000000
+exp 1150, FLT_MAX                  f64 47efffffe0000000 (3.40282e+38  ) -> PR 7f7fffff (3.40282e+38  ) ref 7f7fffff ok | base ff7fffff bias-only 7f7fffff
+exp 1150, max mant (>FLT_MAX)      f64 47efffffffffffff (3.40282e+38  ) -> PR 7f7fffff (3.40282e+38  ) ref 7f7fffff ok | base ff7fffff bias-only 7f7fffff
+exp 1151, 2^128                    f64 47f0000000000000 (3.40282e+38  ) -> PR 7f800000 (inf          ) ref 7f800000 ok | base ff800000 bias-only 7f800000
+-exp 1151                          f64 c7f0000000000000 (-3.40282e+38 ) -> PR ff800000 (-inf         ) ref ff800000 ok | base ff800000 bias-only ff800000
+DBL_MAX                            f64 7fefffffffffffff (1.79769e+308 ) -> PR 7f800000 (inf          ) ref 7f800000 ok | base bf7fffff bias-only 3f7fffff
++inf                               f64 7ff0000000000000 (inf          ) -> PR 7f800000 (inf          ) ref 7f800000 ok | base 7f800000 bias-only 7f800000
+-inf                               f64 fff0000000000000 (-inf         ) -> PR ff800000 (-inf         ) ref ff800000 ok | base ff800000 bias-only ff800000
+qNaN canonical                     f64 7ff8000000000000 (nan          ) -> PR 7fc00000 (nan          ) ref 7fc00000 ok | base 7fc00000 bias-only 7fc00000
+-qNaN                              f64 fff8000000000000 (-nan         ) -> PR ffc00000 (-nan         ) ref ffc00000 ok | base ffc00000 bias-only ffc00000
+sNaN payload in hi                 f64 7ff0000100000000 (nan          ) -> PR 7f800008 (nan          ) ref 7fc00000 ok | base 7f800008 bias-only 7f800008
+sNaN payload only low 29 bits      f64 7ff0000000000001 (nan          ) -> PR 7f800000 (inf          ) ref 7fc00000 MISMATCH | base 7f800000 bias-only 7f800000
+NaN payload low 29 bits (max)      f64 7ff000001fffffff (nan          ) -> PR 7f800000 (inf          ) ref 7fc00000 MISMATCH | base 7f800000 bias-only 7f800000
+NaN payload bit 29                 f64 7ff0000020000000 (nan          ) -> PR 7f800001 (nan          ) ref 7fc00000 ok | base 7f800001 bias-only 7f800001
+2^-767 (ACO sqrt)                  f64 1000000000000000 (1.28823e-231 ) -> PR 00000000 (0            ) ref 00000000 ok | base 40000000 bias-only c0000000
+1.5                                f64 3ff8000000000000 (1.5          ) -> PR 3fc00000 (1.5          ) ref 3fc00000 ok | base bfc00000 bias-only 3fc00000
+0.1                                f64 3fb999999999999a (0.1          ) -> PR 3dcccccc (0.1          ) ref 3dcccccc ok | base bdcccccc bias-only 3dcccccc
+-1.0                               f64 bff0000000000000 (-1           ) -> PR bf800000 (-1           ) ref bf800000 ok | base bf800000 bias-only bf800000
+f64->f32 mismatches vs reference: 9676
+f32->f64 exhaustive: non-denormal mismatches 0 (first 00000000), denormal mismatches 16777214 (first 00000001)
+  e.g. f32 00000001 (1.4013e-45) -> f64 0000000020000000 (2.65249e-315), expected 36a0000000000000
+  e.g. f32 007fffff (1.17549e-38) -> f64 000fffffe0000000 (2.22507e-308), expected 380fffffc0000000
+round trip f32->f64->f32 (PR): non-denormal changed 0, denormal changed 0
+round trip f32->f64->f32 (bias-only): changed 0
+  e.g. f32 00400000 -> PR round trip 00400000, bias-only round trip 00400000
+in-range f64: PR (truncate) differs from RNE in 5000784 / 10000000 (always by 1 ulp)
+1/(2pi) f64 3fc45f306dc9c882: truncated 3e22f983, RNE 3e22f983
+
+Classification of all 9676 mismatches (edge cases, sweep and random inputs):
+  f64 denormal (exponent 0): the internal encoding is kept: 9670
+  NaN whose payload is only in the low 29 bits: becomes infinity: 6

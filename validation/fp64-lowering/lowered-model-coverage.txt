@@ -1,0 +1,118 @@
+model f64_v.0 add.lo: checked=4096 skipped=0 failed=0
+model f64_v.1 add.hi: checked=4096 skipped=0 failed=0
+model f64_v.2 sub.lo: checked=4096 skipped=0 failed=0
+model f64_v.3 sub.hi: checked=4096 skipped=0 failed=0
+model f64_v.4 mul.lo: checked=4096 skipped=0 failed=0
+model f64_v.5 mul.hi: checked=4096 skipped=0 failed=0
+model f64_v.6 fma.lo: checked=4096 skipped=0 failed=0
+model f64_v.7 fma.hi: checked=4096 skipped=0 failed=0
+model f64_v.8 div.lo: checked=0 skipped=4096 failed=0
+model f64_v.9 div.hi: checked=0 skipped=4096 failed=0
+model f64_v.10 sqrt.lo: checked=0 skipped=4096 failed=0
+model f64_v.11 sqrt.hi: checked=0 skipped=4096 failed=0
+model f64_v.12 floor.lo: checked=4096 skipped=0 failed=0
+model f64_v.13 floor.hi: checked=4096 skipped=0 failed=0
+model f64_v.14 ceil.lo: checked=4096 skipped=0 failed=0
+model f64_v.15 ceil.hi: checked=4096 skipped=0 failed=0
+model f64_v.16 trunc.lo: checked=4096 skipped=0 failed=0
+model f64_v.17 trunc.hi: checked=4096 skipped=0 failed=0
+model f64_v.18 rndne.lo: checked=4096 skipped=0 failed=0
+model f64_v.19 rndne.hi: checked=4096 skipped=0 failed=0
+model f64_v.20 fract.lo: checked=4096 skipped=0 failed=0
+model f64_v.21 fract.hi: checked=4096 skipped=0 failed=0
+model f64_v.22 abs.lo: checked=4096 skipped=0 failed=0
+model f64_v.23 abs.hi: checked=4096 skipped=0 failed=0
+model f64_v.24 neg.lo: checked=4096 skipped=0 failed=0
+model f64_v.25 neg.hi: checked=4096 skipped=0 failed=0
+model f64_v.26 min.lo: checked=4010 skipped=86 failed=0
+model f64_v.27 min.hi: checked=4010 skipped=86 failed=0
+model f64_v.28 max.lo: checked=4010 skipped=86 failed=0
+model f64_v.29 max.hi: checked=4010 skipped=86 failed=0
+model f64_v.30 f32_f64.lo: checked=4096 skipped=0 failed=0
+model f64_v.31 f32_f64.hi: checked=4096 skipped=0 failed=0
+model f64_v.32 cvt_f64_i32.lo: checked=4096 skipped=0 failed=0
+model f64_v.33 cvt_f64_i32.hi: checked=4096 skipped=0 failed=0
+model f64_v.34 cvt_f64_u32.lo: checked=4096 skipped=0 failed=0
+model f64_v.35 cvt_f64_u32.hi: checked=4096 skipped=0 failed=0
+model f64_v.36 ldexp.lo: checked=4096 skipped=0 failed=0
+model f64_v.37 ldexp.hi: checked=4096 skipped=0 failed=0
+model f64_v.38 frexp_mant.lo: checked=0 skipped=4096 failed=0
+model f64_v.39 frexp_mant.hi: checked=0 skipped=4096 failed=0
+model f64_v.40 rsq.lo: checked=0 skipped=4096 failed=0
+model f64_v.41 rsq.hi: checked=0 skipped=4096 failed=0
+model f64_v.42 rcp.lo: checked=0 skipped=4096 failed=0
+model f64_v.43 rcp.hi: checked=0 skipped=4096 failed=0
+model f64_v.44 frexp_exp: checked=3833 skipped=263 failed=0
+model f64_v.45 cvt_f32_f64: checked=4096 skipped=0 failed=0
+model f64_v.46 cvt_i32_f64: checked=4096 skipped=0 failed=0
+model f64_v.47 cvt_u32_f64: checked=4096 skipped=0 failed=0
+model f64_v.48 cmp_mask: checked=4096 skipped=0 failed=0
+model f64_v.49 class: checked=4096 skipped=0 failed=0
+model f64_v.50 cmp_u_o: checked=4096 skipped=0 failed=0
+model f64_v.51 zero: checked=4096 skipped=0 failed=0
+model f64_s.0 add.lo: checked=4096 skipped=0 failed=0
+model f64_s.1 add.hi: checked=4096 skipped=0 failed=0
+model f64_s.2 sub.lo: checked=4096 skipped=0 failed=0
+model f64_s.3 sub.hi: checked=4096 skipped=0 failed=0
+model f64_s.4 mul.lo: checked=4096 skipped=0 failed=0
+model f64_s.5 mul.hi: checked=4096 skipped=0 failed=0
+model f64_s.6 fma.lo: checked=4096 skipped=0 failed=0
+model f64_s.7 fma.hi: checked=4096 skipped=0 failed=0
+model f64_s.8 div.lo: checked=0 skipped=4096 failed=0
+model f64_s.9 div.hi: checked=0 skipped=4096 failed=0
+model f64_s.10 sqrt.lo: checked=0 skipped=4096 failed=0
+model f64_s.11 sqrt.hi: checked=0 skipped=4096 failed=0
+model f64_s.12 floor.lo: checked=4096 skipped=0 failed=0
+model f64_s.13 floor.hi: checked=4096 skipped=0 failed=0
+model f64_s.14 ceil.lo: checked=4096 skipped=0 failed=0
+model f64_s.15 ceil.hi: checked=4096 skipped=0 failed=0
+model f64_s.16 trunc.lo: checked=4096 skipped=0 failed=0
+model f64_s.17 trunc.hi: checked=4096 skipped=0 failed=0
+model f64_s.18 rndne.lo: checked=4096 skipped=0 failed=0
+model f64_s.19 rndne.hi: checked=4096 skipped=0 failed=0
+model f64_s.20 fract.lo: checked=4096 skipped=0 failed=0
+model f64_s.21 fract.hi: checked=4096 skipped=0 failed=0
+model f64_s.22 abs.lo: checked=4096 skipped=0 failed=0
+model f64_s.23 abs.hi: checked=4096 skipped=0 failed=0
+model f64_s.24 neg.lo: checked=4096 skipped=0 failed=0
+model f64_s.25 neg.hi: checked=4096 skipped=0 failed=0
+model f64_s.26 min.lo: checked=3776 skipped=320 failed=0
+model f64_s.27 min.hi: checked=3776 skipped=320 failed=0
+model f64_s.28 max.lo: checked=3776 skipped=320 failed=0
+model f64_s.29 max.hi: checked=3776 skipped=320 failed=0
+model f64_s.30 f32_f64.lo: checked=4096 skipped=0 failed=0
+model f64_s.31 f32_f64.hi: checked=4096 skipped=0 failed=0
+model f64_s.32 cvt_f64_i32.lo: checked=4096 skipped=0 failed=0
+model f64_s.33 cvt_f64_i32.hi: checked=4096 skipped=0 failed=0
+model f64_s.34 cvt_f64_u32.lo: checked=4096 skipped=0 failed=0
+model f64_s.35 cvt_f64_u32.hi: checked=4096 skipped=0 failed=0
+model f64_s.36 ldexp.lo: checked=4096 skipped=0 failed=0
+model f64_s.37 ldexp.hi: checked=4096 skipped=0 failed=0
+model f64_s.38 frexp_mant.lo: checked=0 skipped=4096 failed=0
+model f64_s.39 frexp_mant.hi: checked=0 skipped=4096 failed=0
+model f64_s.40 rsq.lo: checked=0 skipped=4096 failed=0
+model f64_s.41 rsq.hi: checked=0 skipped=4096 failed=0
+model f64_s.42 rcp.lo: checked=0 skipped=4096 failed=0
+model f64_s.43 rcp.hi: checked=0 skipped=4096 failed=0
+model f64_s.44 frexp_exp: checked=3200 skipped=896 failed=0
+model f64_s.45 cvt_f32_f64: checked=4096 skipped=0 failed=0
+model f64_s.46 cvt_i32_f64: checked=4096 skipped=0 failed=0
+model f64_s.47 cvt_u32_f64: checked=4096 skipped=0 failed=0
+model f64_s.48 cmp_mask: checked=4096 skipped=0 failed=0
+model f64_s.49 class: checked=4096 skipped=0 failed=0
+model f64_s.50 cmp_u_o: checked=4096 skipped=0 failed=0
+model f64_s.51 zero: checked=4096 skipped=0 failed=0
+case int_v: ok
+case int_s: ok
+case f32_v: ok
+case f32_s: ok
+case cvt_v: ok
+case cvt_s: ok
+case f64_v: ok
+case f64_s: ok
+case i64_v: ok
+case i64_s: ok
+case lds: ok
+case f64_pack: ok
+case f64_pack_const: ok
+SHADTEST name=shader_alu status=PASS cases=13 failed_ops=0 f64_mode=lowered

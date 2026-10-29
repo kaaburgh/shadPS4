@@ -1,0 +1,92 @@
+diff --git a/tests/shader_alu/src/main.c b/tests/shader_alu/src/main.c
+index ff83bab..ed447a8 100644
+--- a/tests/shader_alu/src/main.c
++++ b/tests/shader_alu/src/main.c
+@@ -863,10 +863,73 @@ static uint32_t ref_f64(unsigned op, const volatile uint32_t* o) {
+     }
+ }
+ 
++static uint32_t pack_f64_to_f32(uint64_t x);
++static uint64_t unpack_f32_to_f64(uint32_t f);
++static unsigned model_checked[64], model_skipped[64];
+ static bool match_f64(unsigned op, const volatile uint32_t* o, uint32_t expected,
+                       const volatile uint32_t* row) {
+     const double a = f64((uint64_t)o[0] | ((uint64_t)o[1] << 32));
+     const double b = f64((uint64_t)o[2] | ((uint64_t)o[3] << 32));
++    { /* SCRATCH: exact model of the f32 lowering. */
++#define SKIP do { model_skipped[op]++; return true; } while (0)
++        model_checked[op]++;
++        const uint64_t ab = (uint64_t)o[0] | ((uint64_t)o[1] << 32);
++        const uint64_t bb = (uint64_t)o[2] | ((uint64_t)o[3] << 32);
++        const float na = f32(pack_f64_to_f32(ab));
++        const float nb = f32(pack_f64_to_f32(bb));
++        if (op >= 44) {
++            const uint64_t wa = unpack_f32_to_f64(bits32(na));
++            const uint64_t wb = unpack_f32_to_f64(bits32(nb));
++            const uint32_t o2[4] = {(uint32_t)wa, (uint32_t)(wa >> 32), (uint32_t)wb,
++                                    (uint32_t)(wb >> 32)};
++            if (op == 44 && !isfinite(na)) {
++                model_checked[op]--;
++                SKIP;
++            }
++            if (op == 45) {
++                return row[op] == pack_f64_to_f32(ab) ||
++                       (is_nan32(row[op]) && is_nan32(pack_f64_to_f32(ab)));
++            }
++            return row[op] == ref_f64(op, o2);
++        }
++        const unsigned kk = op / 2;
++        const uint64_t gg = (uint64_t)row[2 * kk] | ((uint64_t)row[2 * kk + 1] << 32);
++        float m, m2;
++        switch (kk) {
++        case 0: m = m2 = na + nb; break;
++        case 1: m = m2 = na - nb; break;
++        case 2: m = m2 = na * nb; break;
++        case 3: m = fmaf(na, nb, na); m2 = na * nb; m2 = m2 + na; break;
++        case 6: m = m2 = floorf(na); break;
++        case 7: m = m2 = ceilf(na); break;
++        case 8: m = m2 = truncf(na); break;
++        case 9: m = m2 = nearbyintf(na); break;
++        case 10: m = m2 = na - floorf(na); break;
++        case 13:
++        case 14:
++            if (isnan(na) || isnan(nb)) {
++                model_checked[op]--;
++                SKIP;
++            }
++            m = kk == 13 ? fminf(na, nb) : fmaxf(na, nb);
++            m2 = na == nb ? nb : m; /* min/max of +0 and -0 may return either */
++            break;
++        case 15: m = m2 = na; break;
++        case 16: m = m2 = (float)(int32_t)o[0]; break;
++        case 17: m = m2 = (float)o[0]; break;
++        case 18: m = m2 = ldexpf(na, (int)(o[2] & 63u) - 32); break;
++        case 11: /* ACO clears the sign bit with an integer op: exact in f64. */
++            return gg == (ab & 0x7fffffffffffffffull);
++        case 12:
++            return gg == (ab ^ 0x8000000000000000ull);
++        default:
++            model_checked[op]--;
++            SKIP;
++        }
++        const uint64_t model = unpack_f32_to_f64(bits32(m));
++        const uint64_t model2 = unpack_f32_to_f64(bits32(m2));
++        return gg == model || gg == model2 || (is_nan64(model) && is_nan64(gg));
++    }
+     if (op >= 44) {
+         if (op == 44) {
+             return !isfinite(a) || row[op] == expected;
+@@ -1239,6 +1302,13 @@ static unsigned check_variant(const Family* f, bool uniform,
+                          t * f->op_count + op, expected, got);
+         }
+     }
++    if (f->match == match_f64) { /* SCRATCH: model coverage */
++        for (unsigned op = 0; op < f->op_count; ++op) {
++            printf("model %s_%c.%u %s: checked=%u skipped=%u failed=%u\n", f->name, uniform ? 's' : 'v',
++                   op, f->ops[op], model_checked[op], model_skipped[op], results[op].bad);
++            model_checked[op] = model_skipped[op] = 0;
++        }
++    }
+     unsigned failed = 0;
+     for (unsigned op = 0; op < f->op_count; ++op) {
+         const OpResult* r = &results[op];

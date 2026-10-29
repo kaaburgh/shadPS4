@@ -1,0 +1,22 @@
+diff --git a/tests/shader_alu/src/main.c b/tests/shader_alu/src/main.c
+index ff83bab..d4ab5e9 100644
+--- a/tests/shader_alu/src/main.c
++++ b/tests/shader_alu/src/main.c
+@@ -876,6 +876,17 @@ static bool match_f64(unsigned op, const volatile uint32_t* o, uint32_t expected
+     const unsigned k = op / 2;
+     const uint64_t e = bits64(ref_f64_value(k, a, b, o[2]));
+     const uint64_t g = (uint64_t)row[2 * k] | ((uint64_t)row[2 * k + 1] << 32);
++    { /* SCRATCH: f32-precision check of the fp64 lowering. Eligibility depends on the
++       * operands and the reference only, never on the GPU result. */
++        const double ed = f64(e), gd = f64(g);
++        const bool in32 = isfinite(a) && fabs(a) >= 1e-30 && fabs(a) <= 1e30 && isfinite(b) &&
++                          fabs(b) >= 1e-30 && fabs(b) <= 1e30 && isfinite(ed) &&
++                          (ed == 0.0 || (fabs(ed) >= 1e-30 && fabs(ed) <= 1e30));
++        if (!in32) {
++            return true;
++        }
++        return fabs(gd - ed) <= fabs(ed) * 1e-5 + 1e-5;
++    }
+     if (match64_exact(e, g)) {
+         return true;
+     }
