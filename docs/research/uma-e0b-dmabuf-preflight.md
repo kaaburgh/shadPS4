@@ -77,7 +77,7 @@ python3 tools/uma_e0b_preflight.py run --mode radv \
 
 Use --device N if multiple devices are exposed. The runner requests RADV, then **checks actual JSON device facts**: AMD vendor 0x1002, driver name containing radv, real discrete/integrated GPU, and DMA-BUF source exactly /dev/udmabuf. CPU lavapipe or AMDVLK is rejected. There is no fake-memfd option in this mode.
 
-RADV_IMPORT_PROTOTYPE_GO requires all four actual T4b/T5b variants PASS, no device loss, and no validation errors. This gates *a prototype of the importer*, not enabling it by default: 64–256 MiB import sizing, pin/GTT budget, failed import fallback, synchronization and performance still need testing later on real hardware.
+RADV_IMPORT_PROTOTYPE_GO requires all four actual T4b/T5b DMA-BUF variants PASS, an AMD RADV GPU, real /dev/udmabuf, explicit no device loss, and zero validation errors when enabled. This gates *a prototype of the importer*, not enabling it by default: 64–256 MiB import sizing, pin/GTT budget, failed import fallback, synchronization and performance still need testing later on real hardware.
 
 | Verdict | Meaning |
 | --- | --- |
@@ -85,7 +85,7 @@ RADV_IMPORT_PROTOTYPE_GO requires all four actual T4b/T5b variants PASS, no devi
 | RADV_IMPORT_PROTOTYPE_GO | real RADV small-buffer coherence and remap tests passed; importer prototype justified |
 | BLOCKED | unavailable /dev/udmabuf or a required test is UNSUPPORTED, SKIP or missing |
 | WRONG_DEVICE | selected GPU/driver/source does not match mode |
-| FAIL | probe data mismatch, validation error, device loss, duplicate evidence or nonzero probe failure |
+| FAIL | required or unexpected probe error, validation error, device loss, duplicate/malformed evidence, or unexplained/inconsistent process exit |
 | INFRA_FAIL | source fetch/build/execution/JSON collection could not complete |
 
 ## Evidence and exit status
@@ -102,9 +102,13 @@ Exit code: 0 means self-test success or RADV prototype GO; 1 means actual FAIL; 
 An existing report can be reclassified without a GPU:
 
 ~~~bash
-python3 tools/uma_e0b_preflight.py classify --mode radv \
+python3 tools/uma_e0b_preflight.py classify --mode radv --probe-returncode 1 \
     e0b-radv-evidence/probe.json
 ~~~
+
+The native probe exit status is recorded as `probe_returncode` separately from the gate verdict. The pinned probe returns 1 for any FAIL/ERROR, including an optional host-pointer import refusal. On AMD/RADV only, an `ERROR` for T4b/T5b `host/bda` or `host/ssbo` with the exact detail `vkAllocateMemory(host import) -> VK_ERROR_UNKNOWN` is recorded in `expected_optional_failures` rather than gating DMA-BUF. Other errors are fatal. Exit 1 is accepted only when the complete eight expected Plan-B cases and run facts establish that these documented host errors are the only failures; other nonzero or inconsistent exits remain fatal. The decision preserves the numeric code and its explanation. This does not claim the host backend works.
+
+When reclassifying saved evidence, supply the **actual native probe exit code** from its original decision or process record using `--probe-returncode` (the `1` above is an example). Without it, otherwise passing evidence is BLOCKED. Both `run` and `classify` use the same judgment; a runner's own exit status is not the native probe status. Keep the original report and decision unchanged.
 
 Attach probe.json, decision.json and probe.log to the PR or shadPS4 #9. They include host/device facts; inspect them before sharing.
 

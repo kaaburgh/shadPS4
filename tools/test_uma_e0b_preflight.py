@@ -3,11 +3,15 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 """No-Vulkan classifier tests: python3 -m unittest tools/test_uma_e0b_preflight.py"""
 import unittest
+import json
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from uma_e0b_preflight import exit_code, judge
+from uma_e0b_preflight import exit_code, judge as classify
+
+def judge(data, mode, rc=0):
+    return classify(data, mode, rc)
 
 
 def report(mode="radv", status="PASS"):
@@ -79,6 +83,48 @@ class VerdictTests(unittest.TestCase):
         data = report()
         data["results"].append(data["results"][0])
         self.assertEqual(judge(data, "radv")["verdict"], "FAIL")
+
+    def test_real_m75n_host_errors_explain_exit_one(self):
+        fixture = Path(__file__).parent / "fixtures" / "uma_e0b_m75n_sanitized.json"
+        data = json.loads(fixture.read_text())
+        result = judge(data, "radv", 1)
+        self.assertEqual(result["verdict"], "RADV_IMPORT_PROTOTYPE_GO")
+        self.assertEqual(len(result["expected_optional_failures"]), 4)
+        self.assertEqual(result["probe_returncode"], 1)
+        self.assertIn("solely", result["probe_returncode_explanation"])
+        self.assertEqual(judge(data, "radv", 0)["verdict"], "FAIL")
+        self.assertEqual(judge(data, "radv", None)["verdict"], "BLOCKED")
+
+    def test_unexpected_error_and_unexplained_exit_are_fatal(self):
+        data = report()
+        data["results"].append({"test": "probe", "variant": "setup", "status": "ERROR", "detail": "boom"})
+        self.assertEqual(judge(data, "radv", 1)["verdict"], "FAIL")
+        self.assertEqual(judge(report(), "radv", 1)["verdict"], "FAIL")
+        self.assertEqual(judge(report(), "radv", 2)["verdict"], "FAIL")
+
+    def test_unrecognized_host_error_is_fatal(self):
+        data = report()
+        data["results"].append({"test": "T4b.planb_coherence_stress", "variant": "host/bda", "status": "ERROR", "detail": "device lost"})
+        self.assertEqual(judge(data, "radv", 1)["verdict"], "FAIL")
+
+    def test_device_loss_is_fatal(self):
+        data = report()
+        next(f for f in data["facts"] if f["key"] == "device_lost")["value"] = "yes"
+        self.assertEqual(judge(data, "radv")["verdict"], "FAIL")
+
+    def test_malformed_required_and_missing_run_facts(self):
+        data = report()
+        data["results"][0]["status"] = None
+        self.assertEqual(judge(data, "radv")["verdict"], "FAIL")
+        data = report()
+        data["facts"] = [f for f in data["facts"] if f["key"] != "device_lost"]
+        self.assertEqual(judge(data, "radv")["verdict"], "FAIL")
+
+    def test_incomplete_report_cannot_explain_exit(self):
+        fixture = Path(__file__).parent / "fixtures" / "uma_e0b_m75n_sanitized.json"
+        data = json.loads(fixture.read_text())
+        data["results"].pop(0)
+        self.assertEqual(judge(data, "radv", 1)["verdict"], "FAIL")
 
     def test_unknown_format(self):
         self.assertEqual(judge({}, "radv")["verdict"], "INVALID_REPORT")
