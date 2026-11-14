@@ -165,6 +165,80 @@ Environment:
 | EOP labels published while parsing, before host completion (pre-E1B behavior) | 10/11 FAIL with unwritten outputs; only gpu_solid_rt (render-target readback) passes |
 | `ObtainBufferForImage` copies shared regions on the CPU at record time | 11/11 PASS: the image-source guard is not exercised by the suite |
 
+### Gate B on M75n (Linux RADV)
+
+Baseline: `66da8f1cdc56e6dd57fbabb59195237046b543d9`. This is eight commits
+ahead of `8d07f08`, including the cross-VMA `TryWriteBacking` fix `83584ce`.
+Candidate tested: `b4946c18da14cfeb7215952a4c786edf67527030` (same source tree as
+the initial Gate B PR commit `91bdcbbfd37cca6a55bda0e208b8319f191a0d9e`).
+Guest suite: [`eb1f2fefb1afc01baa2e2fa15265c81135b1c8e9`][open-test-sha].
+Both emulator builds use DietPi Clang 19.1.7, C++ `-O0` and C `-O1`.
+The M75n runs Debian 13.7, Linux `6.12.117+deb13-amd64`, Mesa
+`25.0.7-2+deb13u1` (RADV RAVEN), Vulkan loader/layers 1.4.309 and device
+API 1.4.305. The guest runner uses headless Weston and Vulkan core and
+synchronization validation.
+
+Gate A ([PR #53][stage-one]) passed on both saved M75n reports. A fresh
+validated run of the pinned E0b probe `e35713c` reproduced four Plan B
+passes (T4b/T5b, BDA/SSBO) and zero validation errors. The probe's exit 1
+is explained by the four optional host-pointer import failures. This is
+the host feasibility gate.
+
+| Guest workload | E3 mirror | New mirror | DMA-BUF Precise | DMA-BUF Disabled |
+| --- | --- | --- | --- | --- |
+| `buffer_compute_roundtrip`, `buffer_cpu_rewrite`, `buffer_pingpong` | PASS | PASS | PASS | PASS |
+| `physical_alias` | FAIL #5 | FAIL #5 | PASS | PASS |
+| `map_unmap_reuse`, `uma_churn` | PASS | PASS | PASS | PASS |
+| `dma_order`, `dma_mixed_endpoints` | PASS | PASS | PASS | PASS |
+| `fallback_in_shared` | PASS | PASS | PASS | R (mirror readback) |
+| `dma_alias_order` | FAIL #5 | FAIL #5 | FAIL #8 | FAIL #8 |
+| `write_data_order`, `cond_exec_gpu_predicate` | PASS | PASS | FAIL #11 | — |
+
+With stock RADV, the original E3 binary used the wrong sparse queue
+(`VUID-vkQueueBindSparse-queuetype`, failed compute round-trip). The E3
+mirror column uses process-local `radv_legacy_sparse_binding=true`. The
+candidate used stock RADV. The exact E3 binary with lavapipe host-pointer
+backing reproduced all three shared-path guest failure markers and values,
+including both noncontiguous `dma_alias_order` cases. In `fallback_in_shared`
+with readbacks Disabled, the shared control passed and mirrored outputs
+were non-diagnostic.
+
+RADV core/sync validation reported two pre-existing fingerprints
+(`VUID-VkPipelineShaderStageCreateInfo-pNext-02755` and
+`SYNC-HAZARD-WRITE-AFTER-PRESENT`). The candidate added no fingerprints,
+device loss, pre-marker crashes or timeouts in these runs.
+
+All 22 opt-in matrix processes logged real DMA-BUF and a shared BufferCache
+request. There were 13 imports in 12 Precise processes and 11 imports in 10
+Disabled processes. Every chunk was 16 MiB; the fd and buffer masks were
+`0x420` and `0x7ad`, and the allocator selected type 5. Removing the
+temporary `kvm` group kept the render node accessible but denied
+`/dev/udmabuf`. Both selected guest controls passed via the mirror with zero
+imports. The candidate also passed compute round-trip and physical aliases
+with the host-pointer backend on lavapipe.
+
+A bounded extension of `map_unmap_reuse` used five different physical ranges
+at the same guest VA. The fourth import reached 64 MiB, the fifth was refused
+by the pin budget, and the guest oracle still returned checksum `d07f69c5`
+with Precise readbacks (baseline and both candidate modes).
+The census recorded 30 shared and 6 mirror requests in the DMA-BUF run.
+Repeated runs peaked at 117.5 MiB GTT with DMA-BUF and 69.5 MiB in mirror,
+with sampled process RSS of about 314–315 MiB and 315–322 MiB respectively.
+`VmLck` and `VmPin` reported zero; they do not account for all driver pins.
+A separate T6b host run with four 16 MiB chunks saw GTT rise by about
+64.5 MiB and return to baseline after release. The few short mixed startup
+and execution timings do not establish a performance gain.
+
+Guest results are bounded to these configurations. The runner terminates
+at the marker, so it does not verify graceful shutdown. The focused test
+covers remap with completed dispatches, and `uma_churn` covers pending
+writes through same-physical remaps. Different-physical remaps under
+in-flight writes, demotion reentry and general mixed alias ordering
+remain open. There is no larger-chunk, large-workload, or NVIDIA result.
+
+[open-test-sha]: https://github.com/kaaburgh/shadps4-open-test/tree/eb1f2fefb1afc01baa2e2fa15265c81135b1c8e9
+[stage-one]: https://github.com/kaaburgh/shadPS4/pull/53
+
 ## Open
 
 - **Paths the suite does not reach.** These guards follow from the design but no test can fail
