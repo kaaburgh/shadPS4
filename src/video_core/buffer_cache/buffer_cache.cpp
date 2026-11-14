@@ -121,7 +121,12 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     runtime.FillBuffer(bda_pagetable_buffer.get(), 0u, bda_pagetable_size, 0u);
 }
 
-BufferCache::~BufferCache() = default;
+BufferCache::~BufferCache() {
+    if (Core::IsUmaSharedBackingRequested()) {
+        LOG_INFO(Render, "UMA shared backing requests: shared={}, fallback={}, demotion_stalls={}",
+                 shared_requests, shared_fallbacks, shared_demotions);
+    }
+}
 
 void BufferCache::TickFrame() {
     if (std::exchange(fault_process_pending, false)) {
@@ -214,6 +219,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
                              is_texel_buffer, 3);
             return *shared;
         }
+        ++shared_fallbacks;
     }
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
     if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size) &&
@@ -249,7 +255,12 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
     // must be filled by a copy on the GPU timeline rather than from guest memory now.
     if (shared_backing->IsEnabled()) {
         if (const auto shared = ObtainSharedBuffer(device_addr, size, false)) {
+            scheduler.Census(UmaCensus::Kind::Buffer, device_addr, size, 1, 1, 3);
             return *shared;
+        }
+        // The retry through ObtainBuffer counts its own fallback.
+        if (!IsRegionGpuModified(device_addr, size) && !IsRegionShared(device_addr, size)) {
+            ++shared_fallbacks;
         }
     }
     if (IsRegionGpuModified(device_addr, size) || IsRegionShared(device_addr, size)) {
@@ -528,6 +539,10 @@ std::optional<std::pair<const Buffer*, u64>> BufferCache::ObtainSharedBuffer(VAd
     if (!shared_ranges.Contains(block_start, block_bytes)) {
         MapSharedBlocks(block_start, block_end, buffer->BufferDeviceAddress() + block_offset);
     }
+    if (++shared_requests == 1) {
+        LOG_INFO(Render, "UMA shared backing: first shared BufferCache request at {:#x}, size={}",
+                 device_addr, size);
+    }
     return std::make_pair(buffer, block_offset + (device_addr - block_start));
 }
 
@@ -546,8 +561,10 @@ void BufferCache::DemoteSharedBlocks(VAddr block_start, VAddr block_end) {
     if (!shared_ranges.Intersects(block_start, size)) {
         return;
     }
-    LOG_WARNING(Render, "UMA shared backing: {:#x}..{:#x} falls back to the mirror", block_start,
-                block_end);
+    if (++shared_demotions == 1) {
+        LOG_WARNING(Render, "UMA shared backing: {:#x}..{:#x} falls back to the mirror",
+                    block_start, block_end);
+    }
     // The mirror uploads from guest memory, which must first receive the writes of work that
     // used these blocks through the shared backing. EnsureResident then rewrites their BDA
     // page table entries.

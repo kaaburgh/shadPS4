@@ -5,10 +5,12 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include "common/arch.h"
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/types.h"
 #include "common/uma_census.h"
+#include "core/address_space.h"
 #include "imgui/renderer/imgui_core.h"
 #include "sdl_window.h"
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
@@ -357,6 +359,14 @@ bool Instance::CreateDevice() {
     }
     image_view_min_lod = add_extension(VK_EXT_IMAGE_VIEW_MIN_LOD_EXTENSION_NAME);
     supports_memory_budget = add_extension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
+#if defined(__linux__) && defined(ARCH_X86_64)
+    if (Core::IsUmaSharedBackingRequested() && driver_id == vk::DriverId::eMesaRadv &&
+        std::ranges::find(available_extensions, VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME) !=
+            available_extensions.end() &&
+        add_extension(VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME)) {
+        external_memory_dma_buf = add_extension(VK_EXT_EXTERNAL_MEMORY_DMA_BUF_EXTENSION_NAME);
+    }
+#endif
     external_memory_host = add_extension(VK_EXT_EXTERNAL_MEMORY_HOST_EXTENSION_NAME);
     if (external_memory_host) {
         const auto host_chain =

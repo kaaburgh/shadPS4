@@ -12,6 +12,8 @@
 
 namespace Core {
 
+bool IsUmaSharedBackingRequested();
+
 enum class MemoryPermission : u32 {
     None = 0,
     Read = 1 << 0,
@@ -48,6 +50,11 @@ public:
     [[nodiscard]] u64 GetBackingSize() const noexcept {
         return backing_size;
     }
+
+#ifdef __linux__
+    // Borrowed descriptor for the canonical memfd. AddressSpace owns its lifetime.
+    [[nodiscard]] int GetBackingFd() const noexcept;
+#endif
 
     [[nodiscard]] VAddr SystemManagedVirtualBase() noexcept {
         return reinterpret_cast<VAddr>(system_managed_base);
