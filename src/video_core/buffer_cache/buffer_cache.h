@@ -98,6 +98,9 @@ public:
     /// Makes device writes to the shared backing visible to the host at the end of a submit.
     void RecordSharedBackingVisibility();
 
+    // Called after the producers are stopped and both Vulkan queues are idle.
+    void ReleaseSharedBacking();
+
     /// Finds a buffer for the specified region.
     [[nodiscard]] std::pair<const Buffer*, u64> ObtainBuffer(VAddr device_addr, u32 size,
                                                              bool is_written,

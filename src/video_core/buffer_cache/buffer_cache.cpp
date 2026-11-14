@@ -609,6 +609,10 @@ void BufferCache::WriteBdaEntries(u64 first_block, std::span<const vk::DeviceAdd
     runtime.CopyBuffer(staging.buffer, bda_pagetable_buffer.get(), {&copy, 1});
 }
 
+void BufferCache::ReleaseSharedBacking() {
+    shared_backing->Release();
+}
+
 void BufferCache::RecordSharedBackingVisibility() {
     if (!shared_backing->IsEnabled()) {
         return;

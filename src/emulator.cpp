@@ -714,6 +714,7 @@ void Emulator::Run(std::filesystem::path file, std::vector<std::string> args,
         window->WaitEvent();
     }
 
+    Libraries::GnmDriver::ReleaseSharedBackingOnExit();
     std::quick_exit(0);
 }
 

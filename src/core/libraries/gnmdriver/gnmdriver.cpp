@@ -34,6 +34,12 @@ void StopCommandProcessor() {
         liverpool->Stop();
 }
 
+void ReleaseSharedBackingOnExit() {
+    if (presenter) {
+        presenter->ReleaseSharedBackingOnExit();
+    }
+}
+
 using namespace AmdGpu;
 
 enum GnmEventType : u64 {

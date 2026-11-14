@@ -52,6 +52,7 @@ class Presenter {
 public:
     Presenter(Frontend::WindowSDL& window, AmdGpu::Liverpool* liverpool);
     ~Presenter();
+    void ReleaseSharedBackingOnExit();
 
     HostPasses::PostProcessingPass::Settings& GetPPSettingsRef() {
         return pp_settings;

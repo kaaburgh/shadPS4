@@ -11,6 +11,7 @@
 #include "core/devtools/layer.h"
 #include "core/emulator_settings.h"
 #include "core/libraries/system/systemservice.h"
+#include "core/libraries/videoout/video_out.h"
 #include "imgui/friends_layer.h"
 #include "imgui/invitation_prompt_layer.h"
 #include "imgui/notifications_layer.h"
@@ -504,6 +505,28 @@ Presenter::Presenter(Frontend::WindowSDL& window_, AmdGpu::Liverpool* liverpool_
         std::fprintf(stderr, "E1B real Scheduler A/fence/B + upload + Finish proof: PASS\n");
         std::quick_exit(0);
     }
+}
+
+void Presenter::ReleaseSharedBackingOnExit() {
+    auto& buffers = rasterizer->GetBufferCache();
+    if (!buffers.IsSharedBackingEnabled()) {
+        return;
+    }
+
+    // Keep VideoOut alive while joining the CP, which may be waiting for a frame.
+    liverpool->Stop();
+    Libraries::VideoOut::StopPresentation();
+
+    // This also covers sparse bindings whose dependent graphics submit failed. Commands
+    // still being recorded are discarded at process exit; do not submit them here.
+    const auto result = instance.GetDevice().waitIdle();
+    if (result != vk::Result::eSuccess) {
+        LOG_ERROR(Render_Vulkan, "UMA shared backing: device idle failed during shutdown: {}",
+                  vk::to_string(result));
+        return;
+    }
+    LOG_INFO(Render_Vulkan, "UMA shared backing: graphics and sparse queues idle at shutdown");
+    buffers.ReleaseSharedBacking();
 }
 
 Presenter::~Presenter() {

@@ -12,6 +12,7 @@ class SymbolsResolver;
 
 namespace Libraries::GnmDriver {
 void StopCommandProcessor();
+void ReleaseSharedBackingOnExit();
 
 using namespace Kernel;
 
