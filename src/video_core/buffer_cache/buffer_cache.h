@@ -176,6 +176,9 @@ private:
 
     std::unique_ptr<SharedBacking> shared_backing;
     RangeSet shared_ranges;
+    u64 shared_requests{};
+    u64 shared_fallbacks{};
+    u64 shared_demotions{};
 
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;

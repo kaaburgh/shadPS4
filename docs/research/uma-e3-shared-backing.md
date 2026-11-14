@@ -21,19 +21,32 @@ not need are listed under "Open" and stay open.
 
 ## Mechanism
 
-**Import path.** The E0b probe established that neither lavapipe nor the tested RTX 5070 Ti
-accepts imported memory in a sparse arena, while a plain buffer over an import works on both
-("plan B"). So:
+**Import path.** [SharedBacking](../../src/video_core/buffer_cache/shared_backing.h)
+exposes the canonical guest physical backing through ordinary Vulkan buffers with BDA (E0b
+Plan B). On x86-64 Linux RADV, the opt-in allows sealing the backing memfd. After sizing the
+file, AddressSpace applies `F_SEAL_SHRINK` and keeps using its canonical `MAP_SHARED` mapping.
+`UDMABUF_CREATE` exports one page-aligned, contiguous memfd range per chunk. The kernel
+may back that range with scattered system pages. Other drivers keep the existing 256 MiB
+`VK_EXT_external_memory_host` path.
 
-- [SharedBacking](../../src/video_core/buffer_cache/shared_backing.h) imports the canonical
-  backing mapping (`AddressSpace::BackingBase`, the `MAP_SHARED` memfd view) with
-  `VK_EXT_external_memory_host`.
-- Imports are 256 MiB chunks created on first use. Each chunk is one plain buffer with BDA,
-  imported with a `HOST_VISIBLE|HOST_COHERENT` memory type: the host keeps accessing the
-  backing through its own mapping, without flush or invalidate. A chunk with no such type
-  counts as failed.
-- Indexing is by physical address. An import therefore stays valid when the guest remaps a
-  VA, and two guest aliases of one physical page reach the same bytes.
+- RADV needs `VK_KHR_external_memory_fd`, `VK_EXT_external_memory_dma_buf` and BDA. The
+  importer checks external-buffer properties for the actual buffer usage, queries fd and
+  buffer memory types, and chooses a `HOST_VISIBLE|HOST_COHERENT` type from the intersection.
+  It binds the entire chunk at buffer memory offset zero. Vulkan owns the fd after successful
+  `vkAllocateMemory`; the caller closes it on allocation failure.
+- DMA-BUF chunks are at most 16 MiB and are rounded down to host pages after applying the
+  runtime udmabuf and Vulkan size limits. The 64 MiB session budget allows four full chunks
+  on the M75n. It is under 2.2% of the reported 2931 MiB GTT and about 1.1% of system RAM.
+  This cap bounds extra pinning when the emulator already uses the remaining RAM. Chunks
+  import on demand and stay alive until GPU work drains at renderer teardown.
+- Guest VAs resolve to physical offsets. Aliases in shared ranges see the same bytes.
+  Unmap drops the VA's BDA entries without destroying the chunk, and a remap resolves its own
+  physical offset. This also keeps resources alive for GPU work already recorded or submitted.
+- The host accesses the original memfd mappings. On the tested x86-64 RADV/udmabuf stack,
+  coherent memory plus the E3 device-to-host barrier and timeline wait sufficed in E0b T4b
+  and T5b without `DMA_BUF_IOCTL_SYNC`. Linux specifies that ioctl for CPU access via a
+  mapping of the DMA-BUF fd. It provides cache maintenance and cannot replace GPU completion.
+  The importer uses the original mappings and the existing E3 ordering.
 
 **Which requests are shared.** Shared state is kept per block. A block is the BDA page-table
 granularity: the sparse alignment, at least 16 KiB (16 KiB on lavapipe).
@@ -89,18 +102,20 @@ Open still access guest memory while parsing.
   shared blocks through BDA without obtaining a buffer in that submit. The barrier sits right
   before the timeline signal, which waits for all work of the submit anyway.
 
-**Opt-in.** Set `SHADPS4_UMA_SHARED_BACKING=1`; the device must support
-`VK_EXT_external_memory_host`. A chunk whose import fails is remembered and its requests use
-the mirror. If the very first import fails, shared backing turns itself off: nothing is shared
-yet, so the emulator then behaves as without the variable. That is the expected outcome on
-RADV, where libdrm creates userptr BOs with `AMDGPU_GEM_USERPTR_ANONONLY` and amdgpu refuses
-file-backed memory, until a udmabuf importer exists (kaaburgh/shadPS4#9).
+**Opt-in.** Set `SHADPS4_UMA_SHARED_BACKING=1`. If the selected importer, device
+node, sealing or kernel limit is unavailable, the emulator uses mirrors. A chunk whose
+import fails or exceeds the pin budget is remembered and uses the mirror. A failed first
+import disables shared backing for the session. Requests crossing chunk boundaries
+also fall back. The log reports the backend, import results, memory types and live bytes.
+A first shared BufferCache request log and the Buffer census events confirm actual use.
+The shutdown summary counts shared requests, fallback requests attempted while shared
+backing was active, and demotion stalls. A runner that stops the process at the guest
+marker may end before teardown summaries are flushed.
 
-Without the variable the emulator behaves as E1B, except for the arena size from the lavapipe
-patch. Arenas stay 4 GiB unless the device reports a sparse address space below 8 GiB or a
-maxBufferSize below 4 GiB. maxBufferSize is rounded up to whole MiB, so RADV (4 GiB - 4) keeps
-4 GiB arenas, while lavapipe (2 GiB sparse address space) gets 1 GiB. The opt-out runs below
-show the E1B behaviour.
+RADV on the M75n exposes sparse binding on a dedicated queue family. Existing sparse
+mirror arena binds use that queue, and rendering waits on the bind timeline semaphore.
+This applies with the opt-in disabled as well. When the graphics queue supports sparse
+binding it remains the selected queue.
 
 ## Dependency on E1B
 

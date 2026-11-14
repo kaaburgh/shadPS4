@@ -71,6 +71,10 @@ public:
         return graphics_queue;
     }
 
+    vk::Queue GetSparseQueue() const {
+        return sparse_queue;
+    }
+
     vk::Queue GetPresentQueue() const {
         return present_queue;
     }
@@ -371,6 +375,14 @@ public:
         return vk11_props.maxMemoryAllocationSize;
     }
 
+    bool IsExternalMemoryDmaBufSupported() const {
+        return external_memory_dma_buf;
+    }
+
+    bool IsBufferDeviceAddressSupported() const {
+        return vk12_features.bufferDeviceAddress;
+    }
+
     /// Returns true when host memory can be imported with VK_EXT_external_memory_host
     bool IsExternalMemoryHostSupported() const {
         return external_memory_host;
@@ -523,6 +535,7 @@ private:
     VmaAllocator allocator{};
     vk::Queue present_queue;
     vk::Queue graphics_queue;
+    vk::Queue sparse_queue;
     std::vector<vk::PhysicalDevice> physical_devices;
     std::vector<std::string> available_extensions;
     std::unordered_map<vk::Format, vk::FormatProperties3> format_properties;
@@ -555,6 +568,7 @@ private:
     bool shader_clock{};
     bool supports_memory_budget{};
     bool external_memory_host{};
+    bool external_memory_dma_buf{};
     vk::DeviceSize min_imported_host_pointer_alignment{};
     bool supports_block_texel_view{};
     u64 total_memory_budget{};
