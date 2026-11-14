@@ -23,14 +23,22 @@ TESTS = ("T4b.planb_coherence_stress", "T5b.planb_remap_identity")
 VARIANTS = ("dmabuf/bda", "dmabuf/ssbo")
 
 
-def judge(report: dict, mode: str) -> dict:
-    if report.get("tool") != "e0b_uma_probe" or report.get("format") != 1:
+def judge(report: dict, mode: str, probe_returncode: int | None = None) -> dict:
+    if not isinstance(report, dict) or report.get("tool") != "e0b_uma_probe" or report.get("format") != 1:
         return {"verdict": "INVALID_REPORT", "problems": ["unknown probe report format"]}
-    facts = {f["key"]: f["value"] for f in report.get("facts", [])}
-    results = report.get("results", [])
+    facts_list = report.get("facts")
+    results = report.get("results")
+    if (not isinstance(facts_list, list) or not isinstance(results, list) or
+            any(not isinstance(f, dict) or not isinstance(f.get("key"), str) or
+                not isinstance(f.get("value"), str) for f in facts_list)):
+        return {"verdict": "INVALID_REPORT", "problems": ["malformed facts or results"]}
+    facts = {f["key"]: f["value"] for f in facts_list}
     problems = []
     blocked = []
     fatal = []
+    optional_failures = []
+    if len(facts) != len(facts_list):
+        fatal.append("duplicate fact keys")
 
     device = facts.get("device.type", "")
     driver = facts.get("device.driver_name", "")
@@ -47,20 +55,51 @@ def judge(report: dict, mode: str) -> dict:
     else:
         return {"verdict": "INVALID_REPORT", "problems": ["unknown mode"]}
 
-    if facts.get("device_lost", "no") != "no":
+    if facts.get("device_lost") != "no":
         fatal.append("Vulkan device lost")
-    if facts.get("validation_errors", "not enabled") not in ("0", "not enabled"):
-        fatal.append("Vulkan validation errors: " + facts["validation_errors"])
+    if facts.get("validation_errors") not in ("0", "not enabled"):
+        fatal.append("Vulkan validation errors or missing evidence: " + str(facts.get("validation_errors")))
 
     indexed = {}
     for entry in results:
-        key = (entry.get("test"), entry.get("variant"))
+        if (not isinstance(entry, dict) or
+                any(not isinstance(entry.get(k), str) for k in ("test", "variant", "status", "detail")) or
+                entry["status"] not in ("PASS", "FAIL", "ERROR", "UNSUPPORTED", "SKIP", "INFO")):
+            fatal.append("malformed result: " + repr(entry))
+            continue
+        key = (entry["test"], entry["variant"])
         if key in indexed:
             fatal.append("duplicate result: " + str(key))
         indexed[key] = entry
-        if entry.get("status") in ("FAIL", "ERROR"):
-            fatal.append("%s/%s: %s: %s" % (entry.get("test"), entry.get("variant"),
-                                            entry.get("status"), entry.get("detail", "")))
+        if entry["status"] in ("FAIL", "ERROR"):
+            message = "%s/%s: %s: %s" % (*key, entry["status"], entry["detail"])
+            expected = (mode == "radv" and device in ("integrated", "discrete") and
+                        vendor == "0x1002" and "radv" in driver.lower() and
+                        key[0] in TESTS and key[1] in ("host/bda", "host/ssbo") and
+                        entry["status"] == "ERROR" and
+                        entry["detail"] == "vkAllocateMemory(host import) -> VK_ERROR_UNKNOWN")
+            (optional_failures if expected else fatal).append(message)
+
+    # The pinned probe returns 1 for any FAIL/ERROR. Only attribute it to host
+    # refusals when all eight expected Plan-B results and run facts are present.
+    expected_keys = {(test, variant) for test in TESTS
+                     for variant in (*VARIANTS, "host/bda", "host/ssbo")}
+    complete = (set(indexed) == expected_keys and len(results) == len(expected_keys) and
+                facts.get("device_lost") == "no" and
+                facts.get("validation_errors") in ("0", "not enabled"))
+    if probe_returncode is None:
+        blocked.append("native probe return code not supplied")
+        rc_explanation = "unknown: native probe return code not supplied"
+    elif type(probe_returncode) is not int:
+        fatal.append("invalid native probe return code")
+        rc_explanation = "invalid return code"
+    elif probe_returncode == 0 and not optional_failures:
+        rc_explanation = "success"
+    elif probe_returncode == 1 and optional_failures and not fatal and complete:
+        rc_explanation = "explained solely by documented optional host-import errors"
+    else:
+        fatal.append("unexplained or inconsistent native probe return code: " + str(probe_returncode))
+        rc_explanation = "unexplained or inconsistent"
 
     checked = {}
     for test in TESTS:
@@ -88,6 +127,9 @@ def judge(report: dict, mode: str) -> dict:
         "checked": checked,
         "problems": problems,
         "failures": fatal,
+        "expected_optional_failures": optional_failures,
+        "probe_returncode": probe_returncode,
+        "probe_returncode_explanation": rc_explanation,
         "blocked": blocked,
         "note": ("lavapipe uses a fake memfd fd; this never establishes actual "
                  "udmabuf/RADV support or production performance" if mode == "lavapipe"
@@ -184,18 +226,14 @@ def run_probe(args: argparse.Namespace) -> int:
             lines = (out / "probe.log").read_text(errors="replace").strip().splitlines()
             raise RuntimeError("probe did not write JSON (return code %d)%s" %
                                (probe_rc, ": " + lines[-1].strip() if lines else ""))
-        result = judge(json.loads((out / "probe.json").read_text()), args.mode)
-        result["probe_returncode"] = probe_rc
-        if probe_rc and result["verdict"] not in ("FAIL", "WRONG_DEVICE"):
-            result["verdict"] = "FAIL"
-            result["failures"].append("probe process exited with " + str(probe_rc))
+        result = judge(json.loads((out / "probe.json").read_text()), args.mode, probe_rc)
     except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
         result = {"verdict": "INFRA_FAIL", "problems": [str(error)]}
 
     (out / "decision.json").write_text(json.dumps(result, indent=2) + "\n")
     print("E0b verdict: " + result["verdict"])
     print("Evidence: " + str(out))
-    for reason in result.get("problems", []) + result.get("failures", []) + result.get("blocked", []):
+    for reason in result.get("problems", []) + result.get("failures", []) + result.get("blocked", []) + result.get("expected_optional_failures", []):
         print("  - " + reason)
     return exit_code(result["verdict"])
 
@@ -213,6 +251,7 @@ def main() -> int:
     run.add_argument("--t4-iters", type=int, default=32)
     classify = sub.add_parser("classify", help="classify a saved probe JSON without a GPU")
     classify.add_argument("--mode", required=True, choices=("lavapipe", "radv"))
+    classify.add_argument("--probe-returncode", type=int, help="native probe process exit code (required for GO)")
     classify.add_argument("report", type=Path)
     args = parser.parse_args()
     if args.operation == "run":
@@ -220,7 +259,7 @@ def main() -> int:
             parser.error("--t4-iters must be 1..256")
         return run_probe(args)
     try:
-        result = judge(json.loads(args.report.read_text()), args.mode)
+        result = judge(json.loads(args.report.read_text()), args.mode, args.probe_returncode)
     except (OSError, ValueError) as error:
         print(error, file=sys.stderr)
         return 2

@@ -1,0 +1,80 @@
+{
+  "tool": "e0b_uma_probe",
+  "format": 1,
+  "facts": [
+    {
+      "key": "device.vendor_id",
+      "value": "0x1002"
+    },
+    {
+      "key": "device.type",
+      "value": "integrated"
+    },
+    {
+      "key": "device.driver_name",
+      "value": "radv"
+    },
+    {
+      "key": "dmabuf.source",
+      "value": "/dev/udmabuf"
+    },
+    {
+      "key": "validation_errors",
+      "value": "0"
+    },
+    {
+      "key": "device_lost",
+      "value": "no"
+    }
+  ],
+  "results": [
+    {
+      "test": "T4b.planb_coherence_stress",
+      "variant": "host/bda",
+      "status": "ERROR",
+      "detail": "vkAllocateMemory(host import) -> VK_ERROR_UNKNOWN"
+    },
+    {
+      "test": "T4b.planb_coherence_stress",
+      "variant": "host/ssbo",
+      "status": "ERROR",
+      "detail": "vkAllocateMemory(host import) -> VK_ERROR_UNKNOWN"
+    },
+    {
+      "test": "T4b.planb_coherence_stress",
+      "variant": "dmabuf/bda",
+      "status": "PASS",
+      "detail": "sanitized: PASS (actual M75n result)"
+    },
+    {
+      "test": "T4b.planb_coherence_stress",
+      "variant": "dmabuf/ssbo",
+      "status": "PASS",
+      "detail": "sanitized: PASS (actual M75n result)"
+    },
+    {
+      "test": "T5b.planb_remap_identity",
+      "variant": "host/bda",
+      "status": "ERROR",
+      "detail": "vkAllocateMemory(host import) -> VK_ERROR_UNKNOWN"
+    },
+    {
+      "test": "T5b.planb_remap_identity",
+      "variant": "host/ssbo",
+      "status": "ERROR",
+      "detail": "vkAllocateMemory(host import) -> VK_ERROR_UNKNOWN"
+    },
+    {
+      "test": "T5b.planb_remap_identity",
+      "variant": "dmabuf/bda",
+      "status": "PASS",
+      "detail": "sanitized: PASS (actual M75n result)"
+    },
+    {
+      "test": "T5b.planb_remap_identity",
+      "variant": "dmabuf/ssbo",
+      "status": "PASS",
+      "detail": "sanitized: PASS (actual M75n result)"
+    }
+  ]
+}
