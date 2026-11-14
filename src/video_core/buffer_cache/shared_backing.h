@@ -41,6 +41,9 @@ public:
     explicit SharedBacking(const Vulkan::Instance& instance, Core::MemoryManager& memory);
     ~SharedBacking();
 
+    // Requires the CP to be stopped and all submitted GPU work to be retired.
+    void Release();
+
     SharedBacking(const SharedBacking&) = delete;
     SharedBacking& operator=(const SharedBacking&) = delete;
 

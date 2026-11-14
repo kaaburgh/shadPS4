@@ -140,20 +140,30 @@ bool SharedBacking::InitDmaBuf(int fd, u64 size) {
 #endif
 
 SharedBacking::~SharedBacking() {
-    // Presenter drains the GPU before BufferCache teardown. Each Chunk destroys its buffer
-    // before freeing the imported memory. Guest VA unmap never releases a physical chunk.
-    if (requested) {
+    Release();
+}
+
+void SharedBacking::Release() {
+    // Each Chunk destroys its buffer before freeing the imported memory.
+    const bool was_enabled = enabled.exchange(false, std::memory_order_relaxed);
+    if (requested && (was_enabled || !chunks.empty())) {
         LOG_INFO(Render_Vulkan,
                  "UMA shared backing summary: backend={}, import_attempts={}, import_successes={}, "
                  "import_failures={}, live_chunks={}, live_bytes={}",
-                 IsEnabled() ? BackendName() : "mirror", import_attempts, live_chunks,
+                 was_enabled ? BackendName() : "mirror", import_attempts, live_chunks,
                  import_attempts - live_chunks, live_chunks, imported_bytes);
     }
+    chunks.clear();
+    live_chunks = 0;
+    imported_bytes = 0;
 #ifdef __linux__
     if (udmabuf_fd >= 0) {
-        close(udmabuf_fd);
+        close(std::exchange(udmabuf_fd, -1));
     }
 #endif
+    if (was_enabled) {
+        LOG_INFO(Render_Vulkan, "UMA shared backing: imported buffers, memory and fd released");
+    }
 }
 
 const char* SharedBacking::BackendName() const {

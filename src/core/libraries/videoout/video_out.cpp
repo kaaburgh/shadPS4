@@ -19,6 +19,12 @@ namespace Libraries::VideoOut {
 
 static std::unique_ptr<VideoOutDriver> driver;
 
+void StopPresentation() {
+    if (driver) {
+        driver->StopPresentation();
+    }
+}
+
 void PS4_SYSV_ABI sceVideoOutSetBufferAttribute(BufferAttribute* attribute, PixelFormat pixelFormat,
                                                 u32 tilingMode, u32 aspectRatio, u32 width,
                                                 u32 height, u32 pitchInPixel) {
