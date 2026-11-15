@@ -57,6 +57,9 @@ public:
     /// phys_addr in it, or nullopt when the range crosses a chunk or cannot be imported.
     std::optional<std::pair<Buffer*, u64>> Lookup(PAddr phys_addr, u64 size);
 
+    // Inspect existing imports without triggering one.
+    [[nodiscard]] bool OverlapsImported(PAddr phys_addr, u64 size) const;
+
 private:
     struct Chunk {
         vk::UniqueDeviceMemory memory;
@@ -79,6 +82,7 @@ private:
     Backend backend{Backend::Mirror};
     u8* backing_base{};
     u64 chunk_size{};
+    u64 budget_bytes{};
     u64 imported_bytes{};
     u64 import_attempts{};
     u64 live_chunks{};

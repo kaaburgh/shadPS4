@@ -4,8 +4,11 @@
 #include <algorithm>
 #include <bit>
 #include <cerrno>
+#include <charconv>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <string_view>
 
 #ifdef __linux__
@@ -34,6 +37,26 @@ constexpr auto DmaBufHandleType = vk::ExternalMemoryHandleTypeFlagBits::eDmaBufE
 constexpr u64 HostChunkBytes = 256_MB;
 constexpr u64 DmaBufChunkBytes = 16_MB;
 constexpr u64 DmaBufBudgetBytes = 64_MB;
+
+#ifdef __linux__
+u64 DmaBufSizeOption(const char* name, u64 fallback) {
+    const char* value = std::getenv(name);
+    if (!value) {
+        return fallback;
+    }
+    const std::string_view text{value};
+    const auto* end = value + text.size();
+    u64 mib{};
+    const auto [ptr, error] = std::from_chars(value, end, mib);
+    if (error != std::errc{} || ptr != end || mib == 0 ||
+        mib > std::numeric_limits<u64>::max() / 1_MB) {
+        LOG_WARNING(Render_Vulkan, "UMA shared backing: invalid {}='{}'; using {} MiB", name, text,
+                    fallback / 1_MB);
+        return fallback;
+    }
+    return mib * 1_MB;
+}
+#endif
 
 } // Anonymous namespace
 
@@ -74,12 +97,13 @@ SharedBacking::SharedBacking(const Vulkan::Instance& instance_, Core::MemoryMana
         backend = Backend::HostPointer;
         chunk_size = HostChunkBytes;
         backing_size = Common::AlignDown(address_space.GetBackingSize(), alignment);
+        budget_bytes = backing_size;
     }
     chunks.resize(Common::DivCeil(backing_size, chunk_size));
     enabled.store(true, std::memory_order_relaxed);
-    LOG_INFO(
-        Render_Vulkan, "UMA shared backing enabled: backend={}, chunk_bytes={}, budget_bytes={}",
-        BackendName(), chunk_size, backend == Backend::DmaBuf ? DmaBufBudgetBytes : backing_size);
+    LOG_INFO(Render_Vulkan,
+             "UMA shared backing enabled: backend={}, chunk_bytes={}, budget_bytes={}",
+             BackendName(), chunk_size, budget_bytes);
 }
 
 #ifdef __linux__
@@ -109,13 +133,13 @@ bool SharedBacking::InitDmaBuf(int fd, u64 size) {
     s64 limit_mib{};
     std::ifstream limit{"/sys/module/udmabuf/parameters/size_limit_mb"};
     const long page_size = sysconf(_SC_PAGESIZE);
-    if (!(limit >> limit_mib) || limit_mib <= 0 || page_size <= 0 ||
-        page_size > static_cast<long>(DmaBufChunkBytes)) {
+    if (!(limit >> limit_mib) || limit_mib <= 0 || page_size <= 0) {
         LOG_WARNING(Render_Vulkan,
                     "UMA shared backing: udmabuf limit or page size unavailable; backend=mirror");
         return false;
     }
-    const u64 kernel_limit = std::min<u64>(limit_mib, DmaBufChunkBytes / 1_MB) * 1_MB;
+    const u64 requested_chunk = DmaBufSizeOption("SHADPS4_UMA_DMABUF_CHUNK_MB", DmaBufChunkBytes);
+    const u64 kernel_limit = std::min<u64>(limit_mib, requested_chunk / 1_MB) * 1_MB;
     const u64 runtime_limit =
         std::min({kernel_limit, instance.MaxBufferSize(), instance.MaxMemoryAllocationSize()});
     chunk_size = Common::AlignDown(runtime_limit, static_cast<u64>(page_size));
@@ -123,6 +147,13 @@ bool SharedBacking::InitDmaBuf(int fd, u64 size) {
         LOG_WARNING(Render_Vulkan,
                     "UMA shared backing: udmabuf limit below a page; backend=mirror");
         return false;
+    }
+    budget_bytes = DmaBufSizeOption("SHADPS4_UMA_DMABUF_BUDGET_MB", DmaBufBudgetBytes);
+    if (budget_bytes < chunk_size) {
+        budget_bytes = std::max(DmaBufBudgetBytes, chunk_size);
+        LOG_WARNING(Render_Vulkan,
+                    "UMA shared backing: DMA-BUF budget below one chunk; using {} bytes",
+                    budget_bytes);
     }
     backing_size = Common::AlignDown(size, static_cast<u64>(page_size));
     udmabuf_fd = open("/dev/udmabuf", O_RDWR | O_CLOEXEC);
@@ -193,6 +224,19 @@ std::optional<std::pair<Buffer*, u64>> SharedBacking::Lookup(PAddr phys_addr, u6
     return std::make_pair(chunk->buffer.get(), phys_addr % chunk_size);
 }
 
+bool SharedBacking::OverlapsImported(PAddr phys_addr, u64 size) const {
+    if (live_chunks == 0 || size == 0 || phys_addr >= backing_size) {
+        return false;
+    }
+    const u64 end = phys_addr + std::min(size, backing_size - phys_addr);
+    for (u64 index = phys_addr / chunk_size; index <= (end - 1) / chunk_size; ++index) {
+        if (chunks[index].buffer) {
+            return true;
+        }
+    }
+    return false;
+}
+
 SharedBacking::Chunk* SharedBacking::GetChunk(u64 index) {
     auto& chunk = chunks[index];
     if (chunk.buffer) {
@@ -223,7 +267,7 @@ bool SharedBacking::ImportChunk(u64 index, Chunk& chunk) {
         return false;
     };
     const bool dma_buf = backend == Backend::DmaBuf;
-    if (dma_buf && size > DmaBufBudgetBytes - imported_bytes) {
+    if (dma_buf && size > budget_bytes - imported_bytes) {
         return fail("budget", "DMA-BUF pin budget exhausted");
     }
     const auto handle_type = dma_buf ? DmaBufHandleType : HostHandleType;

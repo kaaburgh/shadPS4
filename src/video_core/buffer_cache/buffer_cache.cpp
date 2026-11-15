@@ -123,8 +123,7 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
 
 BufferCache::~BufferCache() {
     if (Core::IsUmaSharedBackingRequested()) {
-        LOG_INFO(Render, "UMA shared backing requests: shared={}, fallback={}, demotion_stalls={}",
-                 shared_requests, shared_fallbacks, shared_demotions);
+        LogSharedBackingRequests();
     }
 }
 
@@ -220,6 +219,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
             return *shared;
         }
         ++shared_fallbacks;
+        CountPossibleMixedAlias(device_addr, size);
     }
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
     if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size) &&
@@ -261,6 +261,7 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
         // The retry through ObtainBuffer counts its own fallback.
         if (!IsRegionGpuModified(device_addr, size) && !IsRegionShared(device_addr, size)) {
             ++shared_fallbacks;
+            CountPossibleMixedAlias(device_addr, size);
         }
     }
     if (IsRegionGpuModified(device_addr, size) || IsRegionShared(device_addr, size)) {
@@ -609,7 +610,41 @@ void BufferCache::WriteBdaEntries(u64 first_block, std::span<const vk::DeviceAdd
     runtime.CopyBuffer(staging.buffer, bda_pagetable_buffer.get(), {&copy, 1});
 }
 
+void BufferCache::CountPossibleMixedAlias(VAddr address, u64 size) {
+    // A fallback can cover several noncontiguous direct-memory pages.
+    const auto record_overlap = [&](PAddr physical) {
+        ++possible_mixed_alias_requests;
+        scheduler.Census(UmaCensus::Kind::MixedAlias, address, size, physical);
+    };
+    if (const auto physical = memory->GetContiguousBacking(address, size)) {
+        if (shared_backing->OverlapsImported(*physical, size)) {
+            record_overlap(*physical);
+        }
+        return;
+    }
+
+    constexpr u64 backing_page_size = 16_KB;
+    for (VAddr page = address; size > page - address;) {
+        const u64 bytes =
+            std::min(size - (page - address), backing_page_size - page % backing_page_size);
+        if (const auto physical = memory->GetContiguousBacking(page, bytes);
+            physical && shared_backing->OverlapsImported(*physical, bytes)) {
+            record_overlap(*physical);
+            return;
+        }
+        page += bytes;
+    }
+}
+
+void BufferCache::LogSharedBackingRequests() const {
+    LOG_INFO(Render,
+             "UMA shared backing requests: shared={}, fallback={}, demotion_stalls={}, "
+             "possible_mixed_alias_requests={}",
+             shared_requests, shared_fallbacks, shared_demotions, possible_mixed_alias_requests);
+}
+
 void BufferCache::ReleaseSharedBacking() {
+    LogSharedBackingRequests();
     shared_backing->Release();
 }
 

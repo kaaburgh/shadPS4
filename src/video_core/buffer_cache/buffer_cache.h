@@ -164,6 +164,9 @@ private:
     /// Writes one BDA page table entry per block, starting at first_block.
     void WriteBdaEntries(u64 first_block, std::span<const vk::DeviceAddress> entries);
 
+    void CountPossibleMixedAlias(VAddr address, u64 size);
+    void LogSharedBackingRequests() const;
+
     const Vulkan::Instance& instance;
     Vulkan::Scheduler& scheduler;
     Vulkan::Runtime& runtime;
@@ -182,6 +185,7 @@ private:
     u64 shared_requests{};
     u64 shared_fallbacks{};
     u64 shared_demotions{};
+    u64 possible_mixed_alias_requests{};
 
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;
