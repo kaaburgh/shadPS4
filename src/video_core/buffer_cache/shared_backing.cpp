@@ -251,6 +251,9 @@ bool SharedBacking::ImportChunk(u64 index, Chunk& chunk) {
     const auto reqs = requirements.get<vk::MemoryRequirements2>().memoryRequirements;
     const bool dedicated_required =
         requirements.get<vk::MemoryDedicatedRequirements>().requiresDedicatedAllocation;
+    if (!dma_buf && dedicated_required) {
+        return fail("buffer requirements", "host-pointer imports cannot be dedicated");
+    }
     const bool dedicated_only = dma_buf && dma_buf_dedicated_only;
     if (reqs.size > size || ((dedicated_required || dedicated_only) && reqs.size != size)) {
         return fail("buffer requirements", fmt::format("required {} bytes", reqs.size));
@@ -319,7 +322,6 @@ bool SharedBacking::ImportChunk(u64 index, Chunk& chunk) {
         .fd = fd,
     };
     const vk::ImportMemoryHostPointerInfoEXT host_info = {
-        .pNext = dedicated_required ? &dedicated : nullptr,
         .handleType = HostHandleType,
         .pHostPointer = backing_base + base,
     };
