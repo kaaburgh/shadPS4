@@ -33,8 +33,11 @@ asm(".zerofill USER_AREA,USER_AREA,__USER_AREA,0x5F9000000000");
 namespace Core {
 
 bool IsUmaSharedBackingRequested() {
-    const char* value = std::getenv("SHADPS4_UMA_SHARED_BACKING");
-    return value && std::string_view{value} == "1";
+    static const bool requested = [] {
+        const char* value = std::getenv("SHADPS4_UMA_SHARED_BACKING");
+        return value && std::string_view{value} == "1";
+    }();
+    return requested;
 }
 
 // Constants used for mapping address space.

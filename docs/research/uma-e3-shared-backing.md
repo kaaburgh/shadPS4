@@ -34,11 +34,21 @@ may back that range with scattered system pages. Other drivers keep the existing
   buffer memory types, and chooses a `HOST_VISIBLE|HOST_COHERENT` type from the intersection.
   It binds the entire chunk at buffer memory offset zero. Vulkan owns the fd after successful
   `vkAllocateMemory`; the caller closes it on allocation failure.
-- DMA-BUF chunks are at most 16 MiB and are rounded down to host pages after applying the
-  runtime udmabuf and Vulkan size limits. The 64 MiB session budget allows four full chunks
-  on the M75n. It is under 2.2% of the reported 2931 MiB GTT and about 1.1% of system RAM.
+- The DMA-BUF chunk size and budget default to 16 and 64 MiB. Set
+  `SHADPS4_UMA_DMABUF_CHUNK_MB` and `SHADPS4_UMA_DMABUF_BUDGET_MB` to positive integers
+  in MiB to override them. The chunk is rounded down to host pages after applying the kernel
+  and Vulkan limits. The budget is at least one effective chunk. Invalid values fall back to
+  the defaults, with the budget raised to one chunk if needed. The defaults allow four full
+  chunks on the M75n. It is under 2.2% of the reported 2931 MiB GTT and about 1.1% of system RAM.
   This cap bounds extra pinning when the emulator already uses the remaining RAM. Chunks
   import on demand and stay alive until GPU work drains at renderer teardown.
+  On Debian, running the DMA-BUF backend requires access to `/dev/udmabuf` (the `kvm` group
+  on the M75n) and the DRM render node (the `render` group on the M75n). Failure to open the
+  udmabuf device selects the mirror.
+- The shutdown summary and the `MixedAlias` census event count mirror BufferCache requests
+  that overlap an already imported physical chunk. A hit indicates possible overlap,
+  including noncontiguous mappings. It does not establish that the shared and mirrored
+  paths accessed the same bytes.
 - Guest VAs resolve to physical offsets. Aliases in shared ranges see the same bytes.
   Unmap drops the VA's BDA entries without destroying the chunk, and a remap resolves its own
   physical offset. This also keeps resources alive for GPU work already recorded or submitted.
