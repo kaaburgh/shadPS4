@@ -397,11 +397,29 @@ bool Instance::CreateDevice() {
         return false;
     }
 
-    static constexpr std::array queue_priorities = {1.0f};
-    const vk::DeviceQueueCreateInfo queue_info = {
-        .queueFamilyIndex = queue_family_index,
-        .queueCount = static_cast<u32>(queue_priorities.size()),
-        .pQueuePriorities = queue_priorities.data(),
+    // RADV can advertise sparse binding on a dedicated queue family only.
+    u32 sparse_family_index = queue_family_index;
+    if (!(family_properties[queue_family_index].queueFlags & vk::QueueFlagBits::eSparseBinding)) {
+        for (u32 i = 0; i < family_properties.size(); ++i) {
+            if (family_properties[i].queueFlags & vk::QueueFlagBits::eSparseBinding) {
+                sparse_family_index = i;
+                break;
+            }
+        }
+    }
+    const bool separate_sparse_queue = sparse_family_index != queue_family_index;
+    static constexpr float queue_priority = 1.0f;
+    const std::array queue_infos = {
+        vk::DeviceQueueCreateInfo{
+            .queueFamilyIndex = queue_family_index,
+            .queueCount = 1,
+            .pQueuePriorities = &queue_priority,
+        },
+        vk::DeviceQueueCreateInfo{
+            .queueFamilyIndex = sparse_family_index,
+            .queueCount = 1,
+            .pQueuePriorities = &queue_priority,
+        },
     };
 
     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();
@@ -409,8 +427,8 @@ bool Instance::CreateDevice() {
     vk13_features = feature_chain.get<vk::PhysicalDeviceVulkan13Features>();
     vk::StructureChain device_chain = {
         vk::DeviceCreateInfo{
-            .queueCreateInfoCount = 1u,
-            .pQueueCreateInfos = &queue_info,
+            .queueCreateInfoCount = separate_sparse_queue ? 2u : 1u,
+            .pQueueCreateInfos = queue_infos.data(),
             .enabledExtensionCount = static_cast<u32>(enabled_extensions.size()),
             .ppEnabledExtensionNames = enabled_extensions.data(),
         },
@@ -609,6 +627,14 @@ bool Instance::CreateDevice() {
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*device);
 
     graphics_queue = device->getQueue(queue_family_index, 0);
+    if (features.sparseBinding &&
+        (family_properties[sparse_family_index].queueFlags & vk::QueueFlagBits::eSparseBinding)) {
+        sparse_queue = device->getQueue(sparse_family_index, 0);
+        if (separate_sparse_queue) {
+            LOG_INFO(Render_Vulkan, "Using sparse queue family {} (graphics family {})",
+                     sparse_family_index, queue_family_index);
+        }
+    }
     present_queue = device->getQueue(queue_family_index, 0);
 
     if (calibrated_timestamps) {

@@ -646,11 +646,14 @@ void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
         .pSignalSemaphores = &signal_sema,
     };
 
-    info.AddWait(signal_sema, signal_tick);
-    auto submit_result = instance.GetGraphicsQueue().bindSparse(sparse_info);
+    const auto sparse_queue = instance.GetSparseQueue();
+    ASSERT_MSG(sparse_queue, "BufferCache requires a queue with sparse binding support");
+    const auto submit_result = sparse_queue.bindSparse(sparse_info);
     scheduler.Census(UmaCensus::Kind::ArenaBind, 0, pending_binds.size(), signal_tick,
                      uint64_t(int64_t(submit_result)), scheduler.CensusSubmittingTick());
-    ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
+    ASSERT_MSG(submit_result == vk::Result::eSuccess, "Sparse bind submission failed: {}",
+               vk::to_string(submit_result));
+    info.AddWait(signal_sema, signal_tick);
 
     pending_binds.clear();
 }
