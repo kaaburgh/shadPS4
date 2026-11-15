@@ -21,19 +21,42 @@ not need are listed under "Open" and stay open.
 
 ## Mechanism
 
-**Import path.** The E0b probe established that neither lavapipe nor the tested RTX 5070 Ti
-accepts imported memory in a sparse arena, while a plain buffer over an import works on both
-("plan B"). So:
+**Import path.** [SharedBacking](../../src/video_core/buffer_cache/shared_backing.h)
+exposes the canonical guest physical backing through ordinary Vulkan buffers with BDA (E0b
+Plan B). On x86-64 Linux RADV, the opt-in allows sealing the backing memfd. After sizing the
+file, AddressSpace applies `F_SEAL_SHRINK` and keeps using its canonical `MAP_SHARED` mapping.
+`UDMABUF_CREATE` exports one page-aligned, contiguous memfd range per chunk. The kernel
+may back that range with scattered system pages. Other drivers keep the existing 256 MiB
+`VK_EXT_external_memory_host` path.
 
-- [SharedBacking](../../src/video_core/buffer_cache/shared_backing.h) imports the canonical
-  backing mapping (`AddressSpace::BackingBase`, the `MAP_SHARED` memfd view) with
-  `VK_EXT_external_memory_host`.
-- Imports are 256 MiB chunks created on first use. Each chunk is one plain buffer with BDA,
-  imported with a `HOST_VISIBLE|HOST_COHERENT` memory type: the host keeps accessing the
-  backing through its own mapping, without flush or invalidate. A chunk with no such type
-  counts as failed.
-- Indexing is by physical address. An import therefore stays valid when the guest remaps a
-  VA, and two guest aliases of one physical page reach the same bytes.
+- RADV needs `VK_KHR_external_memory_fd`, `VK_EXT_external_memory_dma_buf` and BDA. The
+  importer checks external-buffer properties for the actual buffer usage, queries fd and
+  buffer memory types, and chooses a `HOST_VISIBLE|HOST_COHERENT` type from the intersection.
+  It binds the entire chunk at buffer memory offset zero. Vulkan owns the fd after successful
+  `vkAllocateMemory`; the caller closes it on allocation failure.
+- The DMA-BUF chunk size and budget default to 16 and 64 MiB. Set
+  `SHADPS4_UMA_DMABUF_CHUNK_MB` and `SHADPS4_UMA_DMABUF_BUDGET_MB` to positive integers
+  in MiB to override them. The chunk is rounded down to host pages after applying the kernel
+  and Vulkan limits. The budget is at least one effective chunk. Invalid values fall back to
+  the defaults, with the budget raised to one chunk if needed. The defaults allow four full
+  chunks on the M75n. It is under 2.2% of the reported 2931 MiB GTT and about 1.1% of system RAM.
+  This cap bounds extra pinning when the emulator already uses the remaining RAM. Chunks
+  import on demand and stay alive until GPU work drains at renderer teardown.
+  On Debian, running the DMA-BUF backend requires access to `/dev/udmabuf` (the `kvm` group
+  on the M75n) and the DRM render node (the `render` group on the M75n). Failure to open the
+  udmabuf device selects the mirror.
+- The shutdown summary and the `MixedAlias` census event count mirror BufferCache requests
+  that overlap an already imported physical chunk. A hit indicates possible overlap,
+  including noncontiguous mappings. It does not establish that the shared and mirrored
+  paths accessed the same bytes.
+- Guest VAs resolve to physical offsets. Aliases in shared ranges see the same bytes.
+  Unmap drops the VA's BDA entries without destroying the chunk, and a remap resolves its own
+  physical offset. This also keeps resources alive for GPU work already recorded or submitted.
+- The host accesses the original memfd mappings. On the tested x86-64 RADV/udmabuf stack,
+  coherent memory plus the E3 device-to-host barrier and timeline wait sufficed in E0b T4b
+  and T5b without `DMA_BUF_IOCTL_SYNC`. Linux specifies that ioctl for CPU access via a
+  mapping of the DMA-BUF fd. It provides cache maintenance and cannot replace GPU completion.
+  The importer uses the original mappings and the existing E3 ordering.
 
 **Which requests are shared.** Shared state is kept per block. A block is the BDA page-table
 granularity: the sparse alignment, at least 16 KiB (16 KiB on lavapipe).
@@ -89,18 +112,20 @@ Open still access guest memory while parsing.
   shared blocks through BDA without obtaining a buffer in that submit. The barrier sits right
   before the timeline signal, which waits for all work of the submit anyway.
 
-**Opt-in.** Set `SHADPS4_UMA_SHARED_BACKING=1`; the device must support
-`VK_EXT_external_memory_host`. A chunk whose import fails is remembered and its requests use
-the mirror. If the very first import fails, shared backing turns itself off: nothing is shared
-yet, so the emulator then behaves as without the variable. That is the expected outcome on
-RADV, where libdrm creates userptr BOs with `AMDGPU_GEM_USERPTR_ANONONLY` and amdgpu refuses
-file-backed memory, until a udmabuf importer exists (kaaburgh/shadPS4#9).
+**Opt-in.** Set `SHADPS4_UMA_SHARED_BACKING=1`. If the selected importer, device
+node, sealing or kernel limit is unavailable, the emulator uses mirrors. A chunk whose
+import fails or exceeds the pin budget is remembered and uses the mirror. A failed first
+import disables shared backing for the session. Requests crossing chunk boundaries
+also fall back. The log reports the backend, import results, memory types and live bytes.
+A first shared BufferCache request log and the Buffer census events confirm actual use.
+The shutdown summary counts shared requests, fallback requests attempted while shared
+backing was active, and demotion stalls. A runner that stops the process at the guest
+marker may end before teardown summaries are flushed.
 
-Without the variable the emulator behaves as E1B, except for the arena size from the lavapipe
-patch. Arenas stay 4 GiB unless the device reports a sparse address space below 8 GiB or a
-maxBufferSize below 4 GiB. maxBufferSize is rounded up to whole MiB, so RADV (4 GiB - 4) keeps
-4 GiB arenas, while lavapipe (2 GiB sparse address space) gets 1 GiB. The opt-out runs below
-show the E1B behaviour.
+RADV on the M75n exposes sparse binding on a dedicated queue family. Existing sparse
+mirror arena binds use that queue, and rendering waits on the bind timeline semaphore.
+This applies with the opt-in disabled as well. When the graphics queue supports sparse
+binding it remains the selected queue.
 
 ## Dependency on E1B
 
@@ -149,6 +174,80 @@ Environment:
 |---|---|
 | EOP labels published while parsing, before host completion (pre-E1B behavior) | 10/11 FAIL with unwritten outputs; only gpu_solid_rt (render-target readback) passes |
 | `ObtainBufferForImage` copies shared regions on the CPU at record time | 11/11 PASS: the image-source guard is not exercised by the suite |
+
+### Gate B on M75n (Linux RADV)
+
+Baseline: `66da8f1cdc56e6dd57fbabb59195237046b543d9`. This is eight commits
+ahead of `8d07f08`, including the cross-VMA `TryWriteBacking` fix `83584ce`.
+Candidate tested: `b4946c18da14cfeb7215952a4c786edf67527030` (same source tree as
+the initial Gate B PR commit `91bdcbbfd37cca6a55bda0e208b8319f191a0d9e`).
+Guest suite: [`eb1f2fefb1afc01baa2e2fa15265c81135b1c8e9`][open-test-sha].
+Both emulator builds use DietPi Clang 19.1.7, C++ `-O0` and C `-O1`.
+The M75n runs Debian 13.7, Linux `6.12.117+deb13-amd64`, Mesa
+`25.0.7-2+deb13u1` (RADV RAVEN), Vulkan loader/layers 1.4.309 and device
+API 1.4.305. The guest runner uses headless Weston and Vulkan core and
+synchronization validation.
+
+Gate A ([PR #53][stage-one]) passed on both saved M75n reports. A fresh
+validated run of the pinned E0b probe `e35713c` reproduced four Plan B
+passes (T4b/T5b, BDA/SSBO) and zero validation errors. The probe's exit 1
+is explained by the four optional host-pointer import failures. This is
+the host feasibility gate.
+
+| Guest workload | E3 mirror | New mirror | DMA-BUF Precise | DMA-BUF Disabled |
+| --- | --- | --- | --- | --- |
+| `buffer_compute_roundtrip`, `buffer_cpu_rewrite`, `buffer_pingpong` | PASS | PASS | PASS | PASS |
+| `physical_alias` | FAIL #5 | FAIL #5 | PASS | PASS |
+| `map_unmap_reuse`, `uma_churn` | PASS | PASS | PASS | PASS |
+| `dma_order`, `dma_mixed_endpoints` | PASS | PASS | PASS | PASS |
+| `fallback_in_shared` | PASS | PASS | PASS | R (mirror readback) |
+| `dma_alias_order` | FAIL #5 | FAIL #5 | FAIL #8 | FAIL #8 |
+| `write_data_order`, `cond_exec_gpu_predicate` | PASS | PASS | FAIL #11 | — |
+
+With stock RADV, the original E3 binary used the wrong sparse queue
+(`VUID-vkQueueBindSparse-queuetype`, failed compute round-trip). The E3
+mirror column uses process-local `radv_legacy_sparse_binding=true`. The
+candidate used stock RADV. The exact E3 binary with lavapipe host-pointer
+backing reproduced all three shared-path guest failure markers and values,
+including both noncontiguous `dma_alias_order` cases. In `fallback_in_shared`
+with readbacks Disabled, the shared control passed and mirrored outputs
+were non-diagnostic.
+
+RADV core/sync validation reported two pre-existing fingerprints
+(`VUID-VkPipelineShaderStageCreateInfo-pNext-02755` and
+`SYNC-HAZARD-WRITE-AFTER-PRESENT`). The candidate added no fingerprints,
+device loss, pre-marker crashes or timeouts in these runs.
+
+All 22 opt-in matrix processes logged real DMA-BUF and a shared BufferCache
+request. There were 13 imports in 12 Precise processes and 11 imports in 10
+Disabled processes. Every chunk was 16 MiB; the fd and buffer masks were
+`0x420` and `0x7ad`, and the allocator selected type 5. Removing the
+temporary `kvm` group kept the render node accessible but denied
+`/dev/udmabuf`. Both selected guest controls passed via the mirror with zero
+imports. The candidate also passed compute round-trip and physical aliases
+with the host-pointer backend on lavapipe.
+
+A bounded extension of `map_unmap_reuse` used five different physical ranges
+at the same guest VA. The fourth import reached 64 MiB, the fifth was refused
+by the pin budget, and the guest oracle still returned checksum `d07f69c5`
+with Precise readbacks (baseline and both candidate modes).
+The census recorded 30 shared and 6 mirror requests in the DMA-BUF run.
+Repeated runs peaked at 117.5 MiB GTT with DMA-BUF and 69.5 MiB in mirror,
+with sampled process RSS of about 314–315 MiB and 315–322 MiB respectively.
+`VmLck` and `VmPin` reported zero; they do not account for all driver pins.
+A separate T6b host run with four 16 MiB chunks saw GTT rise by about
+64.5 MiB and return to baseline after release. The few short mixed startup
+and execution timings do not establish a performance gain.
+
+Guest results are bounded to these configurations. The runner terminates
+at the marker, so it does not verify graceful shutdown. The focused test
+covers remap with completed dispatches, and `uma_churn` covers pending
+writes through same-physical remaps. Different-physical remaps under
+in-flight writes, demotion reentry and general mixed alias ordering
+remain open. There is no larger-chunk, large-workload, or NVIDIA result.
+
+[open-test-sha]: https://github.com/kaaburgh/shadps4-open-test/tree/eb1f2fefb1afc01baa2e2fa15265c81135b1c8e9
+[stage-one]: https://github.com/kaaburgh/shadPS4/pull/53
 
 ## Open
 

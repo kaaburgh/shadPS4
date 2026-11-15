@@ -1,7 +1,9 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <cstdlib>
 #include <map>
+#include <string_view>
 #include <fmt/format.h>
 #include "common/alignment.h"
 #include "common/arch.h"
@@ -29,6 +31,14 @@ asm(".zerofill USER_AREA,USER_AREA,__USER_AREA,0x5F9000000000");
 #endif
 
 namespace Core {
+
+bool IsUmaSharedBackingRequested() {
+    static const bool requested = [] {
+        const char* value = std::getenv("SHADPS4_UMA_SHARED_BACKING");
+        return value && std::string_view{value} == "1";
+    }();
+    return requested;
+}
 
 // Constants used for mapping address space.
 constexpr VAddr SYSTEM_MANAGED_MIN = 0x400000ULL;
@@ -717,7 +727,20 @@ struct AddressSpace::Impl {
         // so please, do not, add MFD_* whatever unless you ifdef it away (must be 0 for FBSD)
         // using sized pages as well causes incessant vm_reclaim calls in kernel, do not use on FBSD
         // under any circumstances.
-        backing_fd = memfd_create("BackingDmem", 0);
+        unsigned memfd_flags = 0;
+#ifdef __linux__
+        if (IsUmaSharedBackingRequested()) {
+            memfd_flags = MFD_ALLOW_SEALING;
+        }
+#endif
+        backing_fd = memfd_create("BackingDmem", memfd_flags);
+#ifdef __linux__
+        if (backing_fd < 0 && memfd_flags != 0) {
+            LOG_WARNING(Kernel_Vmm, "Could not create a sealable guest backing: {}",
+                        strerror(errno));
+            backing_fd = memfd_create("BackingDmem", 0);
+        }
+#endif
         if (backing_fd < 0) {
             LOG_CRITICAL(Kernel_Vmm, "memfd_create failed: {}", strerror(errno));
             throw std::bad_alloc{};
@@ -731,6 +754,13 @@ struct AddressSpace::Impl {
                          strerror(errno));
             throw std::bad_alloc{};
         }
+
+#ifdef __linux__
+        if (memfd_flags && fcntl(backing_fd, F_ADD_SEALS, F_SEAL_SHRINK) < 0) {
+            LOG_WARNING(Kernel_Vmm, "Could not seal guest backing against shrink: {}",
+                        strerror(errno));
+        }
+#endif
 
         // Map backing dmem handle.
         backing_base = static_cast<u8*>(
@@ -827,6 +857,12 @@ AddressSpace::AddressSpace() : impl{std::make_unique<Impl>()} {
 }
 
 AddressSpace::~AddressSpace() = default;
+
+#ifdef __linux__
+int AddressSpace::GetBackingFd() const noexcept {
+    return impl->backing_fd;
+}
+#endif
 
 void* AddressSpace::Map(VAddr virtual_addr, u64 size, PAddr phys_addr, bool is_exec) {
     const VAddr end_addr = virtual_addr + size - 1;

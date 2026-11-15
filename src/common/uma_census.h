@@ -40,7 +40,8 @@ enum class Kind : uint32_t {
     MemoryType,
     UnmapCall,
     GpuMap,
-    GpuUnmap
+    GpuUnmap,
+    MixedAlias
 };
 struct Event {
     uint64_t seq, ns, thread, kind_flags, context, session, tick, address, size, a, b, c, cmd_seq;

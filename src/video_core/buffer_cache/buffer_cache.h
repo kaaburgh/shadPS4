@@ -98,6 +98,9 @@ public:
     /// Makes device writes to the shared backing visible to the host at the end of a submit.
     void RecordSharedBackingVisibility();
 
+    // Called after the producers are stopped and both Vulkan queues are idle.
+    void ReleaseSharedBacking();
+
     /// Finds a buffer for the specified region.
     [[nodiscard]] std::pair<const Buffer*, u64> ObtainBuffer(VAddr device_addr, u32 size,
                                                              bool is_written,
@@ -161,6 +164,9 @@ private:
     /// Writes one BDA page table entry per block, starting at first_block.
     void WriteBdaEntries(u64 first_block, std::span<const vk::DeviceAddress> entries);
 
+    void CountPossibleMixedAlias(VAddr address, u64 size);
+    void LogSharedBackingRequests() const;
+
     const Vulkan::Instance& instance;
     Vulkan::Scheduler& scheduler;
     Vulkan::Runtime& runtime;
@@ -176,6 +182,10 @@ private:
 
     std::unique_ptr<SharedBacking> shared_backing;
     RangeSet shared_ranges;
+    u64 shared_requests{};
+    u64 shared_fallbacks{};
+    u64 shared_demotions{};
+    u64 possible_mixed_alias_requests{};
 
     std::unique_ptr<FaultManager> fault_manager;
     std::unique_ptr<Buffer> bda_pagetable_buffer;

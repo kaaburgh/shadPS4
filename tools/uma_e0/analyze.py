@@ -11,7 +11,7 @@ RECORD = struct.Struct('<13Q')
 Event = namedtuple('Event', 'seq ns thread kf context session tick address size a b c cmd_seq')
 NAMES = ('Map Piece Unmap Protect Vma BlockSize Buffer Snapshot DmaSet DmaRange '
          'Session SubmitSession Submit Complete Packet CpuWrite Irq Fault Watch Tracker '
-         'Readback End CommandBegin Command CommandEnd Finish ArenaBind BackingWrite Resident '         'Name MemoryType UnmapCall GpuMap GpuUnmap').split()
+         'Readback End CommandBegin Command CommandEnd Finish ArenaBind BackingWrite Resident '         'Name MemoryType UnmapCall GpuMap GpuUnmap MixedAlias').split()
 K = {name: i + 1 for i, name in enumerate(NAMES)}
 
 

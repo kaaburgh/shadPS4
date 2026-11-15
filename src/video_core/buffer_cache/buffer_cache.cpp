@@ -121,7 +121,11 @@ BufferCache::BufferCache(const Vulkan::Instance& instance_, Vulkan::Scheduler& s
     runtime.FillBuffer(bda_pagetable_buffer.get(), 0u, bda_pagetable_size, 0u);
 }
 
-BufferCache::~BufferCache() = default;
+BufferCache::~BufferCache() {
+    if (Core::IsUmaSharedBackingRequested()) {
+        LogSharedBackingRequests();
+    }
+}
 
 void BufferCache::TickFrame() {
     if (std::exchange(fault_process_pending, false)) {
@@ -214,6 +218,8 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBuffer(VAddr device_addr, u32 s
                              is_texel_buffer, 3);
             return *shared;
         }
+        ++shared_fallbacks;
+        CountPossibleMixedAlias(device_addr, size);
     }
     // For read-only buffers use device local stream buffer to reduce renderpass breaks.
     if (!is_written && size <= STREAM_THRESHOLD && !IsRegionGpuModified(device_addr, size) &&
@@ -249,7 +255,13 @@ std::pair<const Buffer*, u64> BufferCache::ObtainBufferForImage(VAddr device_add
     // must be filled by a copy on the GPU timeline rather than from guest memory now.
     if (shared_backing->IsEnabled()) {
         if (const auto shared = ObtainSharedBuffer(device_addr, size, false)) {
+            scheduler.Census(UmaCensus::Kind::Buffer, device_addr, size, 1, 1, 3);
             return *shared;
+        }
+        // The retry through ObtainBuffer counts its own fallback.
+        if (!IsRegionGpuModified(device_addr, size) && !IsRegionShared(device_addr, size)) {
+            ++shared_fallbacks;
+            CountPossibleMixedAlias(device_addr, size);
         }
     }
     if (IsRegionGpuModified(device_addr, size) || IsRegionShared(device_addr, size)) {
@@ -528,6 +540,10 @@ std::optional<std::pair<const Buffer*, u64>> BufferCache::ObtainSharedBuffer(VAd
     if (!shared_ranges.Contains(block_start, block_bytes)) {
         MapSharedBlocks(block_start, block_end, buffer->BufferDeviceAddress() + block_offset);
     }
+    if (++shared_requests == 1) {
+        LOG_INFO(Render, "UMA shared backing: first shared BufferCache request at {:#x}, size={}",
+                 device_addr, size);
+    }
     return std::make_pair(buffer, block_offset + (device_addr - block_start));
 }
 
@@ -546,8 +562,10 @@ void BufferCache::DemoteSharedBlocks(VAddr block_start, VAddr block_end) {
     if (!shared_ranges.Intersects(block_start, size)) {
         return;
     }
-    LOG_WARNING(Render, "UMA shared backing: {:#x}..{:#x} falls back to the mirror", block_start,
-                block_end);
+    if (++shared_demotions == 1) {
+        LOG_WARNING(Render, "UMA shared backing: {:#x}..{:#x} falls back to the mirror",
+                    block_start, block_end);
+    }
     // The mirror uploads from guest memory, which must first receive the writes of work that
     // used these blocks through the shared backing. EnsureResident then rewrites their BDA
     // page table entries.
@@ -590,6 +608,44 @@ void BufferCache::WriteBdaEntries(u64 first_block, std::span<const vk::DeviceAdd
         .size = bytes,
     };
     runtime.CopyBuffer(staging.buffer, bda_pagetable_buffer.get(), {&copy, 1});
+}
+
+void BufferCache::CountPossibleMixedAlias(VAddr address, u64 size) {
+    // A fallback can cover several noncontiguous direct-memory pages.
+    const auto record_overlap = [&](PAddr physical) {
+        ++possible_mixed_alias_requests;
+        scheduler.Census(UmaCensus::Kind::MixedAlias, address, size, physical);
+    };
+    if (const auto physical = memory->GetContiguousBacking(address, size)) {
+        if (shared_backing->OverlapsImported(*physical, size)) {
+            record_overlap(*physical);
+        }
+        return;
+    }
+
+    constexpr u64 backing_page_size = 16_KB;
+    for (VAddr page = address; size > page - address;) {
+        const u64 bytes =
+            std::min(size - (page - address), backing_page_size - page % backing_page_size);
+        if (const auto physical = memory->GetContiguousBacking(page, bytes);
+            physical && shared_backing->OverlapsImported(*physical, bytes)) {
+            record_overlap(*physical);
+            return;
+        }
+        page += bytes;
+    }
+}
+
+void BufferCache::LogSharedBackingRequests() const {
+    LOG_INFO(Render,
+             "UMA shared backing requests: shared={}, fallback={}, demotion_stalls={}, "
+             "possible_mixed_alias_requests={}",
+             shared_requests, shared_fallbacks, shared_demotions, possible_mixed_alias_requests);
+}
+
+void BufferCache::ReleaseSharedBacking() {
+    LogSharedBackingRequests();
+    shared_backing->Release();
 }
 
 void BufferCache::RecordSharedBackingVisibility() {
@@ -646,11 +702,14 @@ void BufferCache::SubmitPendingArenaBinds(Vulkan::SubmitInfo& info) {
         .pSignalSemaphores = &signal_sema,
     };
 
-    info.AddWait(signal_sema, signal_tick);
-    auto submit_result = instance.GetGraphicsQueue().bindSparse(sparse_info);
+    const auto sparse_queue = instance.GetSparseQueue();
+    ASSERT_MSG(sparse_queue, "BufferCache requires a queue with sparse binding support");
+    const auto submit_result = sparse_queue.bindSparse(sparse_info);
     scheduler.Census(UmaCensus::Kind::ArenaBind, 0, pending_binds.size(), signal_tick,
                      uint64_t(int64_t(submit_result)), scheduler.CensusSubmittingTick());
-    ASSERT_MSG(submit_result != vk::Result::eErrorDeviceLost, "Device lost during submit");
+    ASSERT_MSG(submit_result == vk::Result::eSuccess, "Sparse bind submission failed: {}",
+               vk::to_string(submit_result));
+    info.AddWait(signal_sema, signal_tick);
 
     pending_binds.clear();
 }

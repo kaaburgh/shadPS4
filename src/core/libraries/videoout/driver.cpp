@@ -48,7 +48,16 @@ VideoOutDriver::VideoOutDriver(u32 width, u32 height) {
     present_thread = std::jthread([&](std::stop_token token) { PresentThread(token); });
 }
 
-VideoOutDriver::~VideoOutDriver() = default;
+VideoOutDriver::~VideoOutDriver() {
+    StopPresentation();
+}
+
+void VideoOutDriver::StopPresentation() {
+    present_thread.request_stop();
+    if (present_thread.joinable()) {
+        present_thread.join();
+    }
+}
 
 int VideoOutDriver::Open(const ServiceThreadParams* params) {
     if (main_port.is_open) {

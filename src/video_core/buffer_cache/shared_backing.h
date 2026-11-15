@@ -29,9 +29,8 @@ struct Buffer;
  * guest memory itself instead of a device-local mirror.
  *
  * Fixed-size chunks of the canonical backing mapping (AddressSpace::BackingBase) are imported
- * with VK_EXT_external_memory_host on first use and exposed as plain buffers ("plan B" of the
- * E0b probe: neither lavapipe nor the tested NVIDIA driver accepts imported memory in a sparse
- * arena). Indexing by physical address keeps an import valid across guest remaps, and two guest
+ * on first use and exposed as plain buffers (E0b Plan B). Indexing by physical address
+ * keeps an import valid across guest remaps, and two guest
  * aliases of the same physical page resolve to the same bytes.
  *
  * Opt-in with SHADPS4_UMA_SHARED_BACKING=1. Used from the CP thread only, except IsEnabled,
@@ -39,11 +38,11 @@ struct Buffer;
  */
 class SharedBacking {
 public:
-    static constexpr u64 CHUNK_BITS = 28;
-    static constexpr u64 CHUNK_SIZE = 1ULL << CHUNK_BITS;
-
     explicit SharedBacking(const Vulkan::Instance& instance, Core::MemoryManager& memory);
     ~SharedBacking();
+
+    // Requires the CP to be stopped and all submitted GPU work to be retired.
+    void Release();
 
     SharedBacking(const SharedBacking&) = delete;
     SharedBacking& operator=(const SharedBacking&) = delete;
@@ -58,9 +57,12 @@ public:
     /// phys_addr in it, or nullopt when the range crosses a chunk or cannot be imported.
     std::optional<std::pair<Buffer*, u64>> Lookup(PAddr phys_addr, u64 size);
 
+    // Inspect existing imports without triggering one.
+    [[nodiscard]] bool OverlapsImported(PAddr phys_addr, u64 size) const;
+
 private:
     struct Chunk {
-        vk::DeviceMemory memory;
+        vk::UniqueDeviceMemory memory;
         std::unique_ptr<Buffer> buffer;
         bool failed{};
     };
@@ -68,11 +70,26 @@ private:
     Chunk* GetChunk(u64 index);
     bool ImportChunk(u64 index, Chunk& chunk);
 
+    enum class Backend { Mirror, HostPointer, DmaBuf };
+    const char* BackendName() const;
+#ifdef __linux__
+    bool InitDmaBuf(int fd, u64 size);
+    int backing_fd{-1};
+    int udmabuf_fd{-1};
+#endif
+
     const Vulkan::Instance& instance;
+    Backend backend{Backend::Mirror};
     u8* backing_base{};
+    u64 chunk_size{};
+    u64 budget_bytes{};
+    u64 imported_bytes{};
+    u64 import_attempts{};
+    u64 live_chunks{};
     u64 backing_size{};
     std::atomic<bool> enabled{};
-    bool any_imported{};
+    bool requested{};
+    bool dma_buf_dedicated_only{};
     std::vector<Chunk> chunks;
 };
 
