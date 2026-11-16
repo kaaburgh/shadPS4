@@ -1,0 +1,35 @@
+device: AMD Radeon Vega 6 Graphics (RADV RAVEN), driver: radv Mesa 25.0.7-2+deb13u1, api 1.4.305
+sparseAddressSpaceSize=0xfffffffc maxMemoryAllocationCount=4294967295
+residencyNonResidentStrict=1 minImportedHostPointerAlignment=0x1000
+memtype  0 heap 1: DEVICE_LOCAL
+memtype  1 heap 1: DEVICE_LOCAL
+memtype  2 heap 0: HOST_VISIBLE COHERENT
+memtype  3 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype  4 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype  5 heap 0: HOST_VISIBLE COHERENT CACHED
+memtype  6 heap 0: HOST_VISIBLE COHERENT CACHED
+memtype  7 heap 1: DEVICE_LOCAL
+memtype  8 heap 0: HOST_VISIBLE COHERENT
+memtype  9 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype 10 heap 0: HOST_VISIBLE COHERENT CACHED
+queue families: work=0 sparse=2
+extensions: external_memory_host=1 external_memory_fd=1 dma_buf=1
+features: sparseBinding=1 sparseResidencyBuffer=1 sparseResidencyAliased=1
+Q   host-pointer plain buffer: importable 
+Q   host-pointer sparse buffer: importable 
+Q   dma-buf      plain buffer: importable exportable 
+Q   dma-buf      sparse buffer: importable exportable 
+    dma-buf arena: test block 64 KiB, driver bind granularity 4 KiB, 8 blocks
+    import: store 0 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.178 ms, vkAllocateMemory 0.077 ms
+    import: store 0 from page 1 (phase 16 KiB), 124 pages, udmabuf 0.123 ms, vkAllocateMemory 0.070 ms
+    import: store 0 from page 2 (phase 32 KiB), 124 pages, udmabuf 0.118 ms, vkAllocateMemory 0.072 ms
+    import: store 0 from page 3 (phase 48 KiB), 124 pages, udmabuf 0.122 ms, vkAllocateMemory 0.070 ms
+    import: store 1 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.174 ms, vkAllocateMemory 0.058 ms
+    bind: 8 blocks in 0.224 ms; memory objects over store 0: 4; gtt_used +0 bytes for a store of 2097152 bytes
+T1  PASS shifted dma-buf: GPU reads 4 views of the same pages at phases 0..48 KiB, a 2-block mapping at phase 16 KiB and both controls (0 mismatches; no mismatch)
+T2  PASS shifted dma-buf: GPU fill of guest page 19 through each of 4 phases, read back through all views and by the CPU, separate submissions (0 mismatches; no mismatch)
+T3  PASS shifted dma-buf: negative control, a private copy of the same bytes shows none of the writes (4096 of 4096 written words differ from an alias)
+T4  PASS shifted dma-buf: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+T5  PASS shifted dma-buf: CPU writes seen by the GPU through all views (0 mismatches; no mismatch)
+T6  PASS shifted dma-buf: GPU fill across a block boundary of the phase-16 KiB mapping lands on neighbouring guest pages 36 and 37 (0 mismatches; no mismatch)
+summary: 6 passed, 0 failed

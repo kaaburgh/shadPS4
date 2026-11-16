@@ -1,0 +1,21 @@
+date_utc: 2026-11-16T23:58:28Z
+set: all
+device_index: 0
+mib: 16
+block_kib: 64
+uname: Linux 6.12.117+deb13-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.117-1 (2026-11-12) x86_64
+os: Debian GNU/Linux 13 (trixie)
+cc: cc (Debian 14.2.0-19) 14.2.0
+git_head: ee5219f7eafa50ff1a90a750b5c1714767ba386d
+git_dirty_files: 0
+udmabuf_device: crw-rw---- 1 root kvm 10, 258 Nov 14 08:40 /dev/udmabuf
+udmabuf_access: yes
+udmabuf_list_limit: 1024
+udmabuf_size_limit_mb: 64
+user: root groups: root
+memlock_kib: 8192
+gtt_total_bytes /sys/class/drm/card0/device: 3074285568
+package mesa-vulkan-drivers: 25.0.7-2+deb13u1
+package libvulkan1: 1.4.309.0-1
+package vulkan-validationlayers: 1.4.309.0-1
+validation_layer: yes
