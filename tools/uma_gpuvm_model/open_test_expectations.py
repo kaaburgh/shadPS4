@@ -9,6 +9,12 @@ here was fitted to census output. check_open_test.py compares a capture with the
 Sizes are bytes. Guest pages are 16 KiB. "direct" means memory the guest mapped itself with
 sceKernelMapDirectMemory; other mappings (code, stack, libc heap) are outside the predictions.
 
+Corrections made after the first captures are marked "Corrected" where they apply. There
+are two: the SIGTERM entry of COMMON, and the mapping named SceGnmDriver. OpenGNM maps 64 KiB
+of direct memory under that name before the test code runs (it takes physical address 0, so
+the arena starts at 2 MiB). The predictions list the mappings a test makes itself, and
+check_open_test.py leaves the SceGnmDriver mapping out of that comparison only.
+
 Placement facts used:
 - st_arena_init: 2 MiB of direct memory, physical and virtual alignment 2 MiB.
 - A non-fixed sceKernelMapDirectMemory returns a VA aligned to the requested alignment.
@@ -29,10 +35,12 @@ COMMON = {
     # Every sceKernelMapDirectMemory in the emulator log has a Map event with Piece events
     # that give the same physical address, and every sceKernelMunmap has Unmap events.
     'direct_map_matches_emulator_log': True,
-    # The open-test runner stops shadPS4 with SIGTERM after the result marker, and shadPS4
-    # has no handler for it, so such a capture cannot be clean. A capture stopped through
-    # IPC STOP must be clean and lossless.
-    'clean_shutdown': {'sigterm': False, 'ipc_stop': True},
+    # A capture stopped through IPC STOP must be clean and lossless.
+    # Corrected after the first captures. The prediction was 'sigterm': False ("shadPS4 has
+    # no handler for SIGTERM, so such a capture cannot be clean"). That was wrong: SDL turns
+    # SIGTERM into a quit event and the recorder shuts down through atexit. 'sigkill' was
+    # added with the correction and is an observation, not a prediction.
+    'clean_shutdown': {'sigterm': True, 'ipc_stop': True, 'sigkill': False},
 }
 
 EXPECT = {

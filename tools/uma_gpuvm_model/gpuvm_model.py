@@ -42,11 +42,12 @@ def geometry(block_bytes=65536, backing_bytes=1 << 20, chunk_bytes=None, guest_b
 class GuestMap:
     """The guest page table: VA page -> PA page, both in 16 KiB guest pages."""
 
-    def __init__(self, pages=None):
+    def __init__(self, pages=None, types=None):
         self.pages = dict(pages or {})
+        self.types = dict(types or {})      # VA page -> VMA type, known only from a capture
 
     def copy(self):
-        return GuestMap(self.pages)
+        return GuestMap(self.pages, self.types)
 
     def map(self, va_page, pa_page, count):
         for i in range(count):
@@ -55,6 +56,7 @@ class GuestMap:
     def unmap(self, va_page, count):
         for i in range(count):
             self.pages.pop(va_page + i, None)
+            self.types.pop(va_page + i, None)
 
     def unit(self, geom, va_unit):
         """Physical unit behind a VA unit, None if unmapped, UNBACKED if not importable."""
@@ -310,19 +312,67 @@ def table_irregular_blocks(guest, geom, entry_units):
     return [blk for blk in guest.blocks(table) if classify(guest, table, blk).kind == IRREGULAR]
 
 
+MIXED_BACKING = 'mixed_backing'
+VMA_TYPES = {2: 'direct', 3: 'flexible', 4: 'pooled', 6: 'stack', 7: 'code', 8: 'file',
+             9: 'system'}
+
+
+def block_class_name(guest, geom, block):
+    """classify() for reports. A block with both backed and non-backing pages is named
+    apart from one with no backed page at all: only the first costs backed memory."""
+    cls = classify(guest, geom, block)
+    if cls.kind == REGULAR:
+        return 'regular_full' if cls.full else 'regular_partial'
+    if cls.kind == NOT_BACKED and any(
+            guest.pages.get(unit // geom.g, UNBACKED) != UNBACKED
+            for unit in range(block * geom.b, (block + 1) * geom.b)):
+        return MIXED_BACKING
+    return cls.kind
+
+
+def aliased_pages(guest, geom):
+    """Physical pages mapped at more than one VA, and those among them whose VAs differ
+    modulo the block: only the second kind needs a second import or a fallback."""
+    owners = {}
+    for va_page, pa_page in guest.pages.items():
+        if pa_page != UNBACKED:
+            owners.setdefault(pa_page, []).append(va_page)
+    aliased = [vas for vas in owners.values() if len(vas) > 1]
+    per_block = max(geom.b // geom.g, 1)
+    other = sum(len({va % per_block for va in vas}) > 1 for vas in aliased)
+    return len(aliased), other
+
+
 def summarize(guest, geom, strict=False):
-    report = {'block_bytes': geom.b * UNIT, 'mapped_guest_pages': len(guest.pages)}
-    classes = Counter()
-    phases = Counter()
+    backed = sum(page != UNBACKED for page in guest.pages.values())
+    aliased, aliased_other_phase = aliased_pages(guest, geom)
+    report = {'block_bytes': geom.b * UNIT, 'mapped_guest_pages': len(guest.pages),
+              'backed_guest_pages': backed, 'unbacked_guest_pages': len(guest.pages) - backed,
+              'aliased_physical_pages': aliased,
+              'aliased_physical_pages_other_phase': aliased_other_phase}
+    if guest.types:
+        by_type = Counter(VMA_TYPES.get(kind, str(kind)) for kind in guest.types.values())
+        report['guest_pages_by_type'] = dict(sorted(by_type.items()))
+    classes, phases, names = Counter(), Counter(), {}
+    by_type = {}
     for block in guest.blocks(geom):
         cls = classify(guest, geom, block)
-        name = cls.kind if cls.kind != REGULAR else ('regular_full' if cls.full
-                                                     else 'regular_partial')
+        name = names[block] = block_class_name(guest, geom, block)
         classes[name] += 1
         if cls.kind == REGULAR:
             phases[cls.anchor % geom.b * UNIT] += 1
+        kinds = {guest.types.get(unit // geom.g)
+                 for unit in range(block * geom.b, (block + 1) * geom.b)}
+        for kind in kinds & {2, 3, 4}:      # blocks that hold importable memory, per type
+            entry = by_type.setdefault(VMA_TYPES[kind], Counter())
+            entry[name] += 1
+            if cls.kind == REGULAR and cls.anchor % geom.b:
+                entry['regular_nonzero_phase'] += 1
     report['blocks'] = dict(sorted(classes.items()))
     report['regular_phase_bytes'] = dict(sorted(phases.items()))
+    if by_type:
+        report['blocks_holding_type'] = {k: dict(sorted(v.items()))
+                                         for k, v in sorted(by_type.items())}
     report['policies'] = {}
     for policy in POLICIES:
         a_plan = plan(guest, geom, policy, strict)
@@ -330,7 +380,9 @@ def summarize(guest, geom, strict=False):
         memories = {memory for memory, _ in a_plan.host.binds.values()}
         report['policies'][policy] = {
             'shared_blocks': decisions[SHARED],
-            'fallback_blocks': decisions[FALLBACK],
+            # Blocks that hold backed memory and cannot be bound. Blocks without any backed
+            # page (code, stack, file mappings) are not counted: nothing is lost on them.
+            'fallback_blocks': decisions[FALLBACK] - classes['unbacked'],
             'linear_imports': sum(isinstance(m, Linear) for m in memories),
             'stitched_objects': sum(isinstance(m, Stitched) for m in memories),
             'mixed_alias_pages': len(mixed_alias_pages(guest, geom, a_plan.decisions)),
@@ -404,56 +456,94 @@ def scenarios():
     return out
 
 
+PATHS = {0: 'mirror', 1: 'stream', 2: 'image_staging', 3: 'shared'}
+
+
+class RequestStats:
+    """BufferCache requests of one class. A range bound a thousand times is a thousand
+    requests and a thousand times its size in 'bytes', but one unique range."""
+
+    def __init__(self):
+        self.requests = self.bytes = 0
+        self.ranges = set()
+        self.paths = Counter()
+
+    def add(self, address, size, path):
+        self.requests += 1
+        self.bytes += size
+        self.ranges.add((address, size))
+        self.paths[PATHS.get(path, str(path))] += 1
+
+    def report(self):
+        covered = end = 0
+        for start, size in sorted(self.ranges):     # union of the ranges, in bytes of VA
+            covered += max(0, start + size - max(start, end))
+            end = max(end, start + size)
+        return {'requests': self.requests, 'bytes': self.bytes,
+                'unique_ranges': len(self.ranges), 'unique_bytes': covered,
+                'paths': dict(sorted(self.paths.items()))}
+
+
 def replay_census(directory, block_bytes=None, chunk_bytes=16 << 20):
     """Replays a UMA E0 capture. Reports the block classification of the memory map at the
-    moment most pages were mapped and at the end, and classifies every BufferCache request
-    against the map in effect when it was made. Pages of GPU-range mappings without Piece
-    events count as unbacked."""
+    moment most backed pages were mapped and at the last event, and classifies every
+    BufferCache request against the map in effect when it was made. Pages of GPU-range
+    mappings without Piece events count as unbacked.
+
+    An incomplete capture is still replayed, and 'capture' says what is wrong with it. Only
+    the records that analyze.integrity trusts are read. They are true, but counts are lower
+    bounds and 'final' is not the end of the run."""
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'uma_e0'))
     import analyze  # noqa: E402
 
+    directory = Path(directory)
+    capture = analyze.integrity(directory)
     kinds = analyze.K
     shift = GUEST_PAGE.bit_length() - 1
     map_kinds = (kinds['Map'], kinds['Piece'], kinds['Unmap'])
 
     def replay(stop=None):
         guest, seen, peak, peak_at, block = GuestMap(), 0, 0, 0, block_bytes
-        requests, request_bytes, memo = Counter(), Counter(), {}
-        for e in analyze.records(Path(directory) / 'events.bin'):
+        backed, requests, memo = 0, {}, {}
+        for e in analyze.records(directory / 'events.bin', allow_truncated=True,
+                                 limit=capture['valid_events']):
             kind, vma_type = e.kf & 0xffffffff, e.kf >> 32
             if kind == kinds['BlockSize'] and block_bytes is None:
                 block = e.size
-            if e.address + e.size > 1 << 40:
+            if not e.size or e.address + e.size > 1 << 40:
                 continue
-            if kind == kinds['Buffer'] and e.size and stop is None:
+            if kind == kinds['Buffer'] and stop is None:
                 key = (e.address, e.size)
                 if key not in memo:
                     geom = Geometry(GUEST_PAGE // UNIT, (block or 65536) // UNIT, 1 << 40, 1 << 40)
                     memo[key] = request_class(guest, geom, e.address, e.size, chunk_bytes)
-                requests[memo[key]] += 1
-                request_bytes[memo[key]] += e.size
+                requests.setdefault(memo[key], RequestStats()).add(e.address, e.size, e.c)
             if kind not in map_kinds:
                 continue
             memo.clear()
-            first, count = e.address >> shift, e.size >> shift
-            if kind == kinds['Map']:
-                guest.unmap(first, count)
-                if vma_type not in (0, 1, 5):  # free, reserved, pool-reserved
-                    guest.map(first, UNBACKED, count)
-            elif kind == kinds['Piece']:
-                guest.map(first, e.a >> shift, count)
-            else:
-                guest.unmap(first, count)
+            # Every page the range touches: a size need not be a multiple of the guest page.
+            pages = range(e.address >> shift, ((e.address + e.size - 1) >> shift) + 1)
+            for index, page in enumerate(pages):
+                if kind == kinds['Piece']:
+                    backed += guest.pages.get(page, UNBACKED) == UNBACKED
+                    guest.pages[page] = (e.a >> shift) + index
+                    guest.types[page] = vma_type
+                else:
+                    backed -= guest.pages.pop(page, UNBACKED) != UNBACKED
+                    guest.types.pop(page, None)
+                    if kind == kinds['Map'] and vma_type not in (0, 1, 5):
+                        guest.pages[page] = UNBACKED    # until a Piece says otherwise
+                        guest.types[page] = vma_type
             seen += 1
-            # A Piece completes the Map before it, so it may move the peak forward.
-            if len(guest.pages) > peak or (kind == kinds['Piece'] and len(guest.pages) == peak):
-                peak, peak_at = len(guest.pages), seen
+            if backed > peak:
+                peak, peak_at = backed, seen
             if seen == stop:
                 break
-        return guest, seen, peak_at, block, requests, request_bytes
+        return guest, seen, peak_at, block, requests
 
-    final, events, peak_at, block, requests, request_bytes = replay()
+    final, events, peak_at, block, requests = replay()
     at_peak = replay(peak_at)[0] if peak_at else GuestMap()
+    recorded = block
     block = block or 65536
 
     def report(guest):
@@ -461,10 +551,24 @@ def replay_census(directory, block_bytes=None, chunk_bytes=16 << 20):
         backing = -(-(top * GUEST_PAGE) // block) * block
         return summarize(guest, geometry(block, max(backing, block, GUEST_PAGE)))
 
-    return {'events': events, 'chunk_bytes': chunk_bytes,
-            'buffer_requests': dict(sorted(requests.items())),
-            'buffer_request_bytes': dict(sorted(request_bytes.items())),
-            'at_peak_mapped': report(at_peak), 'final': report(final)}
+    total = RequestStats()
+    for stats in requests.values():
+        total.requests += stats.requests
+        total.bytes += stats.bytes
+        total.ranges |= stats.ranges
+        total.paths.update(stats.paths)
+    return {'capture': {key: capture[key]
+                        for key in ('complete', 'problems', 'events', 'valid_events')},
+            'block_bytes': block,
+            'block_bytes_source': ('argument' if block_bytes else
+                                   'recorded' if recorded else 'default'),
+            'chunk_bytes': chunk_bytes, 'map_events': events,
+            'buffer_requests': {name: stats.report()
+                                for name, stats in sorted(requests.items())},
+            'buffer_requests_total': total.report(),
+            'at_peak_backed': report(at_peak),
+            'final': report(final),
+            'final_is_end_of_run': capture['complete']}
 
 
 def main():
@@ -479,7 +583,11 @@ def main():
     census.add_argument('--chunk', type=int, default=16 << 20, help='import chunk in bytes')
     args = parser.parse_args()
     if args.command == 'census':
-        print(json.dumps(replay_census(args.directory, args.block, args.chunk), indent=1))
+        report = replay_census(args.directory, args.block, args.chunk)
+        print(json.dumps(report, indent=1))
+        if not report['capture']['complete']:
+            print('warning: incomplete capture, counts are lower bounds: ' +
+                  '; '.join(report['capture']['problems']), file=sys.stderr)
         return
     for block_bytes, (name, (guest, text)) in product(args.block, scenarios().items()):
         report = summarize(guest, geometry(block_bytes), args.strict)

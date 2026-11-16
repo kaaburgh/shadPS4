@@ -1,0 +1,89 @@
+{
+  "harness": "run_synthetic.py",
+  "harness_sha256": "3ee9b73d6ce889430b3b361210022b9f6e4dc70c28d28a76fedf04824fa1a6c5",
+  "shadps4": "/home/user/shadPS4/build/shadps4",
+  "shadps4_sha256": "e06f5e2f75787c089d3b59fde072fb117fb2c358fe1c7acd1004549c237fb592",
+  "elf": "/home/user/shadps4-open-test/out/fallback_in_shared/fallback_in_shared.elf",
+  "capture_dir": "/home/user/runs/v3/fallback_in_shared-shared/capture",
+  "parameters": {
+    "elf": "fallback_in_shared.elf",
+    "elf_sha256": "2ddb2d856e189dfcfe49a572e1d2b2f98494d95eb7c38ee12fbbdc766b316b1b",
+    "readbacks": "precise",
+    "shared_backing": true,
+    "stop": "exit",
+    "label": "fallback_in_shared-shared"
+  },
+  "settings": {
+    "GPU": {
+      "readbacks_mode": 2,
+      "readback_linear_images_enabled": true
+    }
+  },
+  "environment": {
+    "SDL_AUDIO_DRIVER": "dummy",
+    "SHADPS4_ENABLE_IPC": "true",
+    "SHADPS4_UMA_E0_CAPTURE": "/home/user/runs/v3/fallback_in_shared-shared/capture",
+    "SHADPS4_UMA_E0_HARNESS": "run_synthetic.py:3ee9b73d6ce889430b3b361210022b9f6e4dc70c28d28a76fedf04824fa1a6c5",
+    "SHADPS4_UMA_E0_PARAMETERS": "{\"elf\": \"fallback_in_shared.elf\", \"elf_sha256\": \"2ddb2d856e189dfcfe49a572e1d2b2f98494d95eb7c38ee12fbbdc766b316b1b\", \"label\": \"fallback_in_shared-shared\", \"readbacks\": \"precise\", \"shared_backing\": true, \"stop\": \"exit\"}",
+    "SHADPS4_UMA_SHARED_BACKING": "1",
+    "VK_DRIVER_FILES": "/usr/share/vulkan/icd.d/lvp_icd.json",
+    "VK_ICD_FILENAMES": "/usr/share/vulkan/icd.d/lvp_icd.json"
+  },
+  "host": "Linux vm 6.18.44-fc-v470 #1 SMP PREEMPT_DYNAMIC @0 x86_64 x86_64",
+  "start_unix_ns": 1794852446810483920,
+  "marker_line": "SHADTEST name=fallback_in_shared status=PASS",
+  "marker_elapsed_seconds": 0.9599789310000233,
+  "ended": "exited by itself",
+  "exit_code": -5,
+  "result": "PASS",
+  "elapsed_seconds": 1.0502088819999926,
+  "end_unix_ns": 1794852447968060091,
+  "capture": {
+    "complete": true,
+    "problems": [],
+    "events": 244,
+    "file_bytes": 25376,
+    "trailing_bytes": 0,
+    "sequence_gaps": 0,
+    "last_sequence": 243,
+    "counts": {
+      "ArenaBind": 1,
+      "BackingWrite": 4,
+      "BlockSize": 1,
+      "Buffer": 6,
+      "Command": 13,
+      "CommandBegin": 3,
+      "CommandEnd": 3,
+      "Complete": 18,
+      "CpuWrite": 1,
+      "End": 4,
+      "Fault": 1,
+      "Finish": 2,
+      "GpuMap": 13,
+      "GpuUnmap": 15,
+      "Map": 13,
+      "MixedAlias": 2,
+      "Packet": 1,
+      "Piece": 10,
+      "Readback": 1,
+      "Resident": 2,
+      "Session": 22,
+      "Snapshot": 2,
+      "Submit": 19,
+      "SubmitSession": 19,
+      "Tracker": 17,
+      "Unmap": 6,
+      "Vma": 13,
+      "Watch": 32
+    },
+    "metadata": {
+      "clean_shutdown": true,
+      "written_events": 244,
+      "reserved_events": 244,
+      "dropped_events": 0,
+      "limit_bytes": 536870912,
+      "source_sha": "fc155bb5f00e4c172d65bbcb7080a03c51ec84d7",
+      "build_configuration": "RelWithDebInfo"
+    }
+  }
+}
