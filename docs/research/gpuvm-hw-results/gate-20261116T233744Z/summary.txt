@@ -1,0 +1,47 @@
+== control (plain): exit 0, validation messages 0, arguments: --backend control --bw-mib 0
+   gtt_used_bytes before: 12828672  after: 12828672 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+   S1  PASS control: GPU reads through a sparse VA arena bound to driver-allocated backing, 4096 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS control: GPU fill through VA block 1 visible at physical block 4094 (0 mismatches)
+   S3  PASS control: remap VA block 0 phys 4095 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   S1  SKIP no import backend available
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== control (validation): exit 0, validation messages 0, arguments: --backend control --bw-mib 0
+   gtt_used_bytes before: 12828672  after: 12828672 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+   S1  PASS control: GPU reads through a sparse VA arena bound to driver-allocated backing, 4096 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS control: GPU fill through VA block 1 visible at physical block 4094 (0 mismatches)
+   S3  PASS control: remap VA block 0 phys 4095 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   S1  SKIP no import backend available
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== dmabuf (plain): exit 0, validation messages 0, arguments: --backend dmabuf --bw-mib 0
+   gtt_used_bytes before: 12828672  after: 12828672 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+   S1  PASS dma-buf: GPU reads through a sparse VA arena bound to imported backing, 4096 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS dma-buf: GPU fill through VA block 1 visible at physical block 4094 (0 mismatches)
+   S3  PASS dma-buf: remap VA block 0 phys 4095 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== dmabuf (validation): exit 0, validation messages 0, arguments: --backend dmabuf --bw-mib 0
+   gtt_used_bytes before: 12828672  after: 12828672 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+   S1  PASS dma-buf: GPU reads through a sparse VA arena bound to imported backing, 4096 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS dma-buf: GPU fill through VA block 1 visible at physical block 4094 (0 mismatches)
+   S3  PASS dma-buf: remap VA block 0 phys 4095 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+result: every run passed
