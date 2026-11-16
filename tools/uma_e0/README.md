@@ -14,6 +14,34 @@ At the budget limit events are dropped and counted, not silently rotated.
 The writer updates metadata every 250 ms and at normal/quick shutdown. A killed
 process can leave incomplete metadata/tail; analyzer never promotes that result.
 
+events.bin holds whole records in sequence order: record N has sequence number N
+unless counted drops came before it. The capture is closed (End event,
+`clean_shutdown`) on a normal exit of the emulator, on IPC STOP, on SIGTERM and
+when the guest calls exit. The first write error ends the file at the last whole
+record, sets `write_error` in the metadata if that can still be written, and
+counts every later event as dropped. `analyze.integrity(directory)` reports all of
+this for a capture, and `valid_events`, the leading records that can be trusted.
+
+## Capture of any guest ELF
+
+`run_synthetic.py` needs no game, no operator and no existing profile:
+
+```bash
+python3 tools/uma_e0/run_synthetic.py --shadps4 build/shadps4 --elf TEST.elf \
+    --output RUN_DIR --xvfb --lavapipe [--shared-backing]
+```
+
+It creates an isolated user directory, optionally a private Xvfb and the lavapipe
+ICD, starts the ELF through IPC and ends the run at a log marker (default: the
+`SHADTEST name=... status=PASS|FAIL` line of kaaburgh/shadps4-open-test), after
+`--seconds`, or at `--timeout`. `--stop` chooses how: wait for the exit, IPC STOP,
+SIGTERM or SIGKILL. `RUN_DIR` receives `capture/`, `run.log` and `launch.json`,
+which includes the integrity report. `run_open_test_matrix.sh` records every
+open-test workload this way. Results and the checks made on them:
+[docs/research/uma-e0-census-validation.md](../../docs/research/uma-e0-census-validation.md).
+
+## Capture of the Bloodborne scenario
+
 Use the existing verified disposable target, including its independent `app` and
 `app-UPDATE` siblings and copy receipt. Existing source trees and the E0b archive
 remain untouched. Raw logs/screenshots are private and must not be committed.
@@ -95,7 +123,7 @@ No raw host pointers or guest bytes are captured.
 | Vma | post-coalescing VA region; a=prot,b=piece count,c=no-coalesce | actual merged VMA sample; sampling weights repeated regions |
 | GpuMap / GpuUnmap | actual renderer registration request | GPU eligibility uses upstream 40-bit address bound, not GPU protection bits |
 | BlockSize | size=runtime sparse/BDA block size | device-selected value; never hardcoded universally |
-| Buffer | guest range;a=read1/read-write3,b=texel,c=arena0/stream1/staging2 | ObtainBuffer intent candidate, not exact shader execution |
+| Buffer | guest range;a=read1/read-write3,b=texel,c=arena0/stream1/staging2/shared backing3 | ObtainBuffer intent candidate, not exact shader execution |
 | Snapshot | guest source;a=stream1/image staging2/arena upload3 | record-time snapshot; later CPU writes do not modify it |
 | CommandBegin/End | a=operation family on begin; cmd_seq unique | outer scope includes buffer prerequisites; failed/HLE scopes can have no actual consumer |
 | Command | a=draw1/indirect2/dispatch3/runtime copy10/fill11 | actual command recording latches session and candidate tick; runtime copies retain outer cmd_seq |

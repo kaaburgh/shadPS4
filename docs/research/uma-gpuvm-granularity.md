@@ -338,12 +338,14 @@ Independent of hardware: `gpuvm_model.py census` on existing E0 captures (item 4
 
 ## 10. How this was checked, and what was not
 
-- Model and tests: `python3 -m unittest tools/uma_gpuvm_model/test_gpuvm_model.py`, 17 tests,
-  about 3 s, CPU only, deterministic (no randomness, no time, no I/O outside a temp directory).
+- Model and tests: `python3 -m unittest tools/uma_gpuvm_model/test_gpuvm_model.py`, 32 tests,
+  about 10 s, CPU only, deterministic (no randomness, no time, no I/O outside a temp directory).
 - Conditions: exhaustive enumeration against an independent brute-force search (section 4).
-- Census replay: tested on synthetic event streams only. **No real capture was replayed**; the
-  captures are on the M75n, which this work could not reach. The replay needs captures that
-  contain Piece events.
+- Census replay: checked on captures of real runs of the shadps4-open-test workloads on
+  lavapipe, against predictions made before the runs and against the emulator log. Method,
+  results and the defects this found: [uma-e0-census-validation.md](uma-e0-census-validation.md).
+  No capture of a real title was replayed; those are on the M75n. The replay needs captures
+  that contain Piece events.
 - Guest facts: read from the code at `c364436`, not from running titles.
 - Vulkan facts: specification text. Section 2.2 separates what was measured from what was not.
 - Not verified: every RADV and NVIDIA behaviour, every PS4 hardware contract, real-title
