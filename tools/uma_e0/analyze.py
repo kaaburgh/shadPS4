@@ -15,13 +15,104 @@ NAMES = ('Map Piece Unmap Protect Vma BlockSize Buffer Snapshot DmaSet DmaRange 
 K = {name: i + 1 for i, name in enumerate(NAMES)}
 
 
-def records(path):
+def records(path, allow_truncated=False, limit=None):
+    """Yields the events of events.bin, at most limit of them. A file that ends inside a
+    record is an error unless allow_truncated is set; the partial record is then skipped.
+    integrity() reports it."""
     with path.open('rb') as stream:
         while block := stream.read(RECORD.size * 4096):
             if len(block) % RECORD.size:
-                raise ValueError('truncated event record')
+                if not allow_truncated:
+                    raise ValueError('truncated event record')
+                block = block[:len(block) - len(block) % RECORD.size]
             for values in RECORD.iter_unpack(block):
+                if limit is not None:
+                    if not limit:
+                        return
+                    limit -= 1
                 yield Event(*values)
+
+
+def integrity(directory):
+    """Whether a capture is a complete record of the run, and if not, why. Never raises on
+    a damaged capture: every defect becomes an entry of 'problems'.
+
+    'events' counts the whole records of events.bin and 'valid_events' the leading ones that
+    can be trusted: read them with records(path, allow_truncated=True, limit=valid_events).
+    The recorder numbers events before it writes them, and only a counted drop may skip a
+    number, so a record whose number is too high, not higher than the one before, or whose
+    kind is unknown was not written where it is read. It and everything after it is
+    discarded. A capture with problems still holds true events in its valid part, but
+    counts, last states and absences cannot be trusted."""
+    directory = Path(directory)
+    problems, meta = [], {}
+    try:
+        meta = json.loads((directory / 'metadata.json').read_text())
+        if not isinstance(meta, dict):
+            raise ValueError
+    except (OSError, ValueError) as error:
+        meta = {}
+        problems.append(f'metadata.json unreadable: {error.__class__.__name__}')
+    if meta and (meta.get('schema') != 'shadps4-uma-e0/v1' or
+                 meta.get('record_bytes') != RECORD.size):
+        problems.append('unsupported schema or record size')
+    path = directory / 'events.bin'
+    size = path.stat().st_size if path.is_file() else 0
+    whole, trailing = divmod(size, RECORD.size)
+    dropped = meta.get('dropped_events') or 0
+    counts, valid, prior, end_at = Counter(), 0, -1, None
+    if path.is_file():
+        for index, e in enumerate(records(path, allow_truncated=True)):
+            kind = e.kf & 0xffffffff
+            if not 1 <= kind <= len(NAMES) or e.seq <= prior or e.seq - index > dropped:
+                break
+            counts[NAMES[kind - 1]] += 1
+            if kind == K['End'] and not e.context:
+                end_at = index          # the recorder's own End; observers set a context
+            prior, valid = e.seq, index + 1
+    else:
+        problems.append('events.bin missing')
+    if valid < whole:
+        # The damage starts somewhere inside the record before the first bad number.
+        problems.append(f'record {valid} does not continue the sequence: it, the record '
+                        f'before it and the {whole - valid - 1} after it are ignored')
+        valid = max(0, valid - 1)
+        counts, prior, end_at = Counter(), -1, None
+        for index, e in enumerate(records(path, allow_truncated=True, limit=valid)):
+            counts[NAMES[(e.kf & 0xffffffff) - 1]] += 1
+            prior = e.seq
+    gaps = prior + 1 - valid
+    if trailing:
+        problems.append(f'events.bin ends inside a record ({trailing} trailing bytes)')
+    if meta:
+        if not meta.get('clean_shutdown'):
+            problems.append('recorder did not shut down cleanly')
+        if meta.get('write_error'):
+            problems.append(f"recorder stopped writing: {meta['write_error']}")
+        if dropped:
+            problems.append(f'{dropped} events dropped by the recorder')
+        if meta.get('written_events') != whole:
+            problems.append(f"metadata counts {meta.get('written_events')} written events, "
+                            f'events.bin holds {whole}')
+        # A number is reserved before the collector writes or drops the event. More missing
+        # numbers than counted drops means events were lost without being counted: the
+        # process ended with events still in the ring.
+        reserved = meta.get('reserved_events')
+        if reserved is not None and valid == whole:     # else the damage is reported above
+            lost = max(0, reserved - valid) - dropped
+            if lost > 0:
+                problems.append(f'{lost} reserved events neither written nor counted as dropped')
+    if end_at is None:
+        problems.append('no End event of the recorder')
+    elif end_at != whole - 1:
+        problems.append('events after the End event of the recorder')
+    return {'complete': not problems, 'problems': problems, 'events': whole,
+            'valid_events': valid, 'file_bytes': size, 'trailing_bytes': trailing,
+            'sequence_gaps': gaps, 'last_sequence': prior,
+            'counts': dict(sorted(counts.items())),
+            'metadata': {key: meta.get(key) for key in (
+                'clean_shutdown', 'written_events', 'reserved_events', 'dropped_events',
+                'write_error', 'limit_bytes', 'source_sha', 'build_configuration')}}
 
 
 def dist(values):

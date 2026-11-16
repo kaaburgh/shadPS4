@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import analyze
 
 class CensusTests(unittest.TestCase):
@@ -93,5 +95,107 @@ class CensusTests(unittest.TestCase):
         root=self.capture([('End',1,{})])
         with (root/'events.bin').open('ab') as stream:stream.write(b'x')
         with self.assertRaisesRegex(ValueError,'truncated'):analyze.analyze(root)
+
+class IntegrityTests(unittest.TestCase):
+    """analyze.integrity: what makes a capture incomplete, and which records are trusted."""
+
+    def capture(self, seqs, end=True, kinds=None, **metadata):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        data = []
+        for i, seq in enumerate(seqs):
+            last = end and i == len(seqs) - 1
+            kind = (kinds or {}).get(i, analyze.K['End' if last else 'Vma'])
+            data.append(analyze.RECORD.pack(seq, i, 1, kind, 0 if last else 10,
+                                            0, 0, 0, 0, 0, 0, 0, 0))
+        (root / 'events.bin').write_bytes(b''.join(data))
+        meta = dict(schema='shadps4-uma-e0/v1', record_bytes=104, clean_shutdown=True,
+                    written_events=len(seqs), reserved_events=len(seqs), dropped_events=0)
+        meta.update(metadata)
+        (root / 'metadata.json').write_text(json.dumps(meta))
+        return root
+
+    def problems(self, root):
+        return analyze.integrity(root)['problems']
+
+    def test_complete_capture(self):
+        state = analyze.integrity(self.capture(range(5)))
+        self.assertTrue(state['complete'])
+        self.assertEqual((state['events'], state['valid_events'], state['counts']),
+                         (5, 5, {'End': 1, 'Vma': 4}))
+
+    def test_end_of_an_observer_is_not_the_end_of_the_capture(self):
+        root = self.capture(range(3), end=False, kinds={2: analyze.K['End']})
+        self.assertEqual(self.problems(root), ['no End event of the recorder'])
+
+    def test_events_after_the_end(self):
+        root = self.capture(range(4))
+        with (root / 'events.bin').open('ab') as stream:
+            stream.write(analyze.RECORD.pack(4, 4, 1, analyze.K['Vma'], 10, *[0] * 8))
+        self.assertEqual(self.problems(root), [
+            'metadata counts 4 written events, events.bin holds 5',
+            'events after the End event of the recorder'])
+
+    def test_file_that_ends_inside_a_record(self):
+        root = self.capture(range(4), end=False, clean_shutdown=False)
+        with (root / 'events.bin').open('ab') as stream:
+            stream.write(b'x' * 17)
+        with self.assertRaisesRegex(ValueError, 'truncated'):
+            list(analyze.records(root / 'events.bin'))
+        self.assertEqual(len(list(analyze.records(root / 'events.bin', allow_truncated=True))), 4)
+        self.assertEqual(len(list(analyze.records(root / 'events.bin', allow_truncated=True,
+                                                  limit=2))), 2)
+        state = analyze.integrity(root)
+        self.assertEqual((state['events'], state['valid_events'], state['trailing_bytes']),
+                         (4, 4, 17))
+        self.assertEqual(state['problems'], [
+            'events.bin ends inside a record (17 trailing bytes)',
+            'recorder did not shut down cleanly', 'no End event of the recorder'])
+
+    def test_budget_drops_are_reported_once(self):
+        root = self.capture(range(3), end=False, reserved_events=10, dropped_events=7)
+        self.assertEqual(self.problems(root), ['7 events dropped by the recorder',
+                                               'no End event of the recorder'])
+
+    def test_events_lost_without_being_counted(self):
+        root = self.capture(range(3), end=False, reserved_events=10, dropped_events=2,
+                            clean_shutdown=False)
+        self.assertIn('5 reserved events neither written nor counted as dropped',
+                      self.problems(root))
+
+    def test_counted_drops_may_skip_sequence_numbers(self):
+        state = analyze.integrity(self.capture([0, 1, 5, 6], dropped_events=3,
+                                               reserved_events=7))
+        self.assertEqual((state['valid_events'], state['sequence_gaps']), (4, 3))
+        self.assertEqual(state['problems'], ['3 events dropped by the recorder'])
+
+    def test_records_after_a_sequence_break_are_not_trusted(self):
+        for seqs in ([0, 1, 2, 585439531024, 585439534868, 5], [0, 1, 2, 2, 4, 5],
+                     [0, 1, 2, 4, 5, 6]):
+            state = analyze.integrity(self.capture(seqs))
+            self.assertEqual((state['events'], state['valid_events']), (6, 2), seqs)
+            self.assertEqual(state['counts'], {'Vma': 2})
+            self.assertIn('record 3 does not continue the sequence', state['problems'][0])
+            self.assertIn('no End event of the recorder', state['problems'])
+
+    def test_unknown_kind_ends_the_trusted_part(self):
+        state = analyze.integrity(self.capture(range(5), kinds={2: 99}))
+        self.assertEqual(state['valid_events'], 1)
+
+    def test_missing_empty_or_foreign_metadata(self):
+        root = self.capture(range(3))
+        (root / 'metadata.json').write_text('')
+        self.assertEqual(self.problems(root), ['metadata.json unreadable: JSONDecodeError'])
+        (root / 'metadata.json').unlink()
+        self.assertEqual(self.problems(root), ['metadata.json unreadable: FileNotFoundError'])
+        (root / 'metadata.json').write_text(json.dumps(dict(schema='other', record_bytes=104)))
+        self.assertIn('unsupported schema or record size', self.problems(root))
+
+    def test_write_error_is_reported(self):
+        root = self.capture(range(3), end=False, clean_shutdown=False,
+                            write_error='No space left on device')
+        self.assertIn('recorder stopped writing: No space left on device', self.problems(root))
+
 
 if __name__=='__main__':unittest.main()
