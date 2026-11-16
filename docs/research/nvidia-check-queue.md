@@ -35,8 +35,8 @@ The Gate B harness (`build-e3.sh`, `run-e3-matrix.sh`) and P1-A harness
   default, opt-out path. On M75n it was covered only with stock RADV (family 0 + 2) and
   with `radv_legacy_sparse_binding=true` (family 0). On NVIDIA the graphics family
   has sparse binding, so nothing should change.
-- **Build:** PR #54 head (`d3d8796` or later; if the queue change is split into its own
-  commit, test that commit). Baseline `66da8f1`. RelWithDebInfo.
+- **Build:** the split queue-family commit `6017e23`, then PR #54 head (`c364436` or
+  later). Baseline `66da8f1`. RelWithDebInfo.
 - **Run:** with `SHADPS4_UMA_SHARED_BACKING` unset, and again with `=1`:
   `buffer_compute_roundtrip`, `map_unmap_reuse`, `uma_churn`. Grep the log for
   `Using sparse queue family`.
@@ -51,8 +51,8 @@ The Gate B harness (`build-e3.sh`, `run-e3-matrix.sh`) and P1-A harness
 - **Why:** the plan-B host-pointer path can chain `VkMemoryDedicatedAllocateInfo`
   with a buffer, which VUID-VkMemoryAllocateInfo-pNext-02806 forbids
   ([review][r-dedicated]). The refactored host-pointer path has only run on lavapipe.
-- **Build:** the commit that fixes the review comment (fail the chunk when
-  `requiresDedicatedAllocation`, drop the `pNext`). RelWithDebInfo.
+- **Build:** PR #54 head (`c364436` or later). The fix is `05af770`: the chunk fails when
+  `requiresDedicatedAllocation` is set, and the `pNext` is dropped. RelWithDebInfo.
 - **Run:** `SHADPS4_UMA_SHARED_BACKING=1`, readbacks Precise and Disabled:
   `buffer_compute_roundtrip`, `buffer_cpu_rewrite`, `buffer_pingpong`,
   `physical_alias`, `map_unmap_reuse`, `uma_churn`, `dma_order`,
@@ -61,7 +61,7 @@ The Gate B harness (`build-e3.sh`, `run-e3-matrix.sh`) and P1-A harness
 - **Expected:** no VUID-02806 or other new fingerprints. Either real host-pointer
   imports with the same results as the lavapipe host-pointer column, or (if dedicated
   is required) every request falls back to the mirror and still passes.
-- **Status:** blocked on the VUID-02806 fix
+- **Status:** queued (the fix landed in `05af770`)
 - **Result:** —
 
 ### NV-3: normal shutdown with host-pointer chunks
@@ -73,7 +73,7 @@ The Gate B harness (`build-e3.sh`, `run-e3-matrix.sh`) and P1-A harness
   `map_unmap_inflight` witness, 3 runs each.
 - **Expected:** exit 0 without a forced signal; the log shows idle, the live chunk
   summary, then release; no lifetime errors or device loss.
-- **Status:** blocked on NV-2
+- **Status:** queued, run after NV-2
 - **Result:** —
 
 ### NV-4: pinning and PCIe cost of whole chunks
@@ -84,7 +84,35 @@ The Gate B harness (`build-e3.sh`, `run-e3-matrix.sh`) and P1-A harness
 - **Run:** focused remap budget test and `uma_churn`, shared vs mirror, 3 runs each.
   Record pinned memory (`VmLck`/`VmPin`, `nvidia-smi`), RSS and wall time.
 - **Expected:** no fixed threshold yet; this produces the first numbers.
-- **Status:** blocked on NV-2; low priority
+- **Status:** queued, run after NV-2; low priority
+- **Result:** —
+
+### NV-5: sparse binding of imported host memory (GPUVM model)
+
+- **Why:** the [architecture review][r-arch] proposes binding imported guest backing into
+  the sparse guest-VA arenas, so host GPU page tables mirror the guest mapping. Whether
+  NVIDIA accepts host-pointer memory in `vkQueueBindSparse` decides if plan B can follow
+  this model. lavapipe reports support but does not alias the pages, so it cannot answer.
+- **Build:** `cc -O1 -g -o uma_gpuvm_probe tools/uma_gpuvm_probe/uma_gpuvm_probe.c -lvulkan`
+  (standalone, no emulator build).
+- **Run:** `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation ./uma_gpuvm_probe --backend host --mib 64`,
+  then the same with `--mib 256`.
+- **Expected:** record `Q`, S1–S3 and every `bind:` timing. PASS means the model works on
+  NVIDIA. If the control passes but host-pointer fails, plan B keeps per-chunk buffers. Bind
+  time per 64 KiB block is the cost of each guest map and unmap.
+- **Status:** queued
+- **Result:** —
+
+### NV-6: PCIe bandwidth of imported memory vs VRAM
+
+- **Why:** on a discrete GPU, zero-copy for every resource moves GPU traffic onto PCIe.
+  The review recommends placement by access pattern (shared for CPU-written and readback
+  data, VRAM for GPU-hot data). This gives the first numbers for that policy.
+- **Build:** same probe as NV-5.
+- **Run:** `./uma_gpuvm_probe --backend host --mib 8 --bw-mib 256`, 3 runs.
+- **Expected:** `B1` lines with local→local, shared→local and local→shared GB/s.
+  No threshold yet.
+- **Status:** queued
 - **Result:** —
 
 ## Done
@@ -93,4 +121,5 @@ None yet.
 
 [open-test]: https://github.com/kaaburgh/shadps4-open-test/tree/eb1f2fefb1afc01baa2e2fa15265c81135b1c8e9
 [pr54]: https://github.com/kaaburgh/shadPS4/pull/54
+[r-arch]: https://github.com/kaaburgh/shadPS4/pull/54
 [r-dedicated]: https://github.com/kaaburgh/shadPS4/pull/54#discussion_r4578387976
