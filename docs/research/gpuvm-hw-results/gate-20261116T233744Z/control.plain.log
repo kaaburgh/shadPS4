@@ -1,0 +1,30 @@
+device: AMD Radeon Vega 6 Graphics (RADV RAVEN), driver: radv Mesa 25.0.7-2+deb13u1, api 1.4.305
+sparseAddressSpaceSize=0xfffffffc maxMemoryAllocationCount=4294967295
+residencyNonResidentStrict=1 minImportedHostPointerAlignment=0x1000
+memtype  0 heap 1: DEVICE_LOCAL
+memtype  1 heap 1: DEVICE_LOCAL
+memtype  2 heap 0: HOST_VISIBLE COHERENT
+memtype  3 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype  4 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype  5 heap 0: HOST_VISIBLE COHERENT CACHED
+memtype  6 heap 0: HOST_VISIBLE COHERENT CACHED
+memtype  7 heap 1: DEVICE_LOCAL
+memtype  8 heap 0: HOST_VISIBLE COHERENT
+memtype  9 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype 10 heap 0: HOST_VISIBLE COHERENT CACHED
+queue families: work=0 sparse=2
+extensions: external_memory_host=1 external_memory_fd=1 dma_buf=1
+features: sparseBinding=1 sparseResidencyBuffer=1 sparseResidencyAliased=1
+Q   host-pointer plain buffer: importable 
+Q   host-pointer sparse buffer: importable 
+Q   dma-buf      plain buffer: importable exportable 
+Q   dma-buf      sparse buffer: importable exportable 
+    control sparse arena: block=4 KiB, blocks=4096, memoryTypeBits=0x7ad
+    bind: 4096 ops of 4 KiB in 208.806 ms (submit + idle)
+S1  PASS control: GPU reads through a sparse VA arena bound to driver-allocated backing, 4096 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+S2  PASS control: GPU fill through VA block 1 visible at physical block 4094 (0 mismatches)
+    bind: 1 ops of 4 KiB in 0.182 ms (submit + idle)
+S3  PASS control: remap VA block 0 phys 4095 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+S1  SKIP no import backend available
+E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+summary: 4 passed, 0 failed
