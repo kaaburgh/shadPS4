@@ -100,8 +100,12 @@ static void setup(int device_index) {
 
     VkPhysicalDeviceDriverProperties drv = {
         .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
+    // Drivers skip structures of extensions they do not support; the value then stays 0.
+    VkPhysicalDeviceExternalMemoryHostPropertiesEXT host_props = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT,
+        .pNext = &drv};
     VkPhysicalDeviceProperties2 p2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2,
-                                      .pNext = &drv};
+                                      .pNext = &host_props};
     vkGetPhysicalDeviceProperties2(pdev, &p2);
     props = p2.properties;
     vkGetPhysicalDeviceMemoryProperties(pdev, &memprops);
@@ -111,6 +115,9 @@ static void setup(int device_index) {
     printf("sparseAddressSpaceSize=%#llx maxMemoryAllocationCount=%u\n",
            (unsigned long long)props.limits.sparseAddressSpaceSize,
            props.limits.maxMemoryAllocationCount);
+    printf("residencyNonResidentStrict=%u minImportedHostPointerAlignment=%#llx\n",
+           props.sparseProperties.residencyNonResidentStrict,
+           (unsigned long long)host_props.minImportedHostPointerAlignment);
     for (uint32_t i = 0; i < memprops.memoryTypeCount; i++) {
         VkMemoryPropertyFlags f = memprops.memoryTypes[i].propertyFlags;
         printf("memtype %2u heap %u:%s%s%s%s\n", i, memprops.memoryTypes[i].heapIndex,

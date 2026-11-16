@@ -97,8 +97,9 @@ The Gate B harness (`build-e3.sh`, `run-e3-matrix.sh`) and P1-A harness
   (standalone, no emulator build).
 - **Run:** `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation ./uma_gpuvm_probe --backend host --mib 64`,
   then the same with `--mib 256`.
-- **Expected:** record `Q`, S1–S3 and every `bind:` timing. PASS means the model works on
-  NVIDIA. If the control passes but host-pointer fails, plan B keeps per-chunk buffers. Bind
+- **Expected:** record `Q`, S1–S3 and every `bind:` timing, plus the header values `block`,
+  `residencyNonResidentStrict`, `minImportedHostPointerAlignment` and
+  `sparseResidencyAliased`. PASS means the model works on NVIDIA. If the control passes but host-pointer fails, plan B keeps per-chunk buffers. Bind
   time per 64 KiB block is the cost of each guest map and unmap.
 - **Status:** queued
 - **Result:** —
@@ -115,6 +116,38 @@ The Gate B harness (`build-e3.sh`, `run-e3-matrix.sh`) and P1-A harness
 - **Status:** queued
 - **Result:** —
 
+### NV-7: the same pages imported twice at different offsets
+
+- **Why:** the [granularity note][r-gran] shows that a 64 KiB block can be bound only if
+  `VA ≡ PA (mod 64 KiB)` for the import it uses. A mapping with another phase needs a second
+  import of the same pages, shifted by 16, 32 or 48 KiB (counterexamples CE1 and CE3).
+  Vulkan defines aliasing per memory object, so nothing guarantees that two imports of the
+  same pages stay consistent, or that the driver accepts the second import at all.
+- **Build:** needs a probe mode that does not exist yet: import the backing a second time at
+  `base + 16 KiB`, bind one block of each import into the arena, write through one and read
+  through the other with a barrier between.
+- **Run:** to be written with the probe mode. Also on M75n with dma-buf.
+- **Expected:** import accepted or refused; bytes consistent in both directions; whether
+  `minImportedHostPointerAlignment` permits a 16 KiB shift.
+- **Status:** blocked on the probe mode, and only worth running if NV-5 passes
+- **Result:** —
+
+### NV-8: host-pointer import of a guest VA range
+
+- **Why:** a block whose pages lie on two physical runs (CE2, CE4 of the
+  [granularity note][r-gran]) has no contiguous import. On the host-pointer path the guest
+  VA range itself is such a "stitched" view, because AddressSpace maps the memfd there in
+  16 KiB pieces. This asks whether NVIDIA imports a range made of several mappings of a
+  shared memfd, and what a live import sees after one piece is remapped.
+- **Build:** needs a probe mode that does not exist yet: map permuted 16 KiB memfd pieces
+  into one VA range (as test `E1` does for an exported buffer), import that range, bind it
+  sparsely, then remap one piece.
+- **Run:** to be written with the probe mode.
+- **Expected:** import accepted or refused; GPU sees the permuted pages; after the remap,
+  whether the import still points at the old page (expected, since imports pin pages).
+- **Status:** blocked on the probe mode, and only worth running if NV-5 passes
+- **Result:** —
+
 ## Done
 
 None yet.
@@ -122,4 +155,5 @@ None yet.
 [open-test]: https://github.com/kaaburgh/shadps4-open-test/tree/eb1f2fefb1afc01baa2e2fa15265c81135b1c8e9
 [pr54]: https://github.com/kaaburgh/shadPS4/pull/54
 [r-arch]: https://github.com/kaaburgh/shadPS4/pull/54
+[r-gran]: https://github.com/kaaburgh/shadPS4/pull/57
 [r-dedicated]: https://github.com/kaaburgh/shadPS4/pull/54#discussion_r4578387976

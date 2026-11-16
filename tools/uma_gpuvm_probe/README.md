@@ -28,7 +28,7 @@ VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation ./uma_gpuvm_probe
 
 | Test | What it shows |
 | --- | --- |
-| `Q` | `vkGetPhysicalDeviceExternalBufferProperties` for host-pointer and dma-buf, plain vs sparse buffers. |
+| `Q` | `vkGetPhysicalDeviceExternalBufferProperties` for host-pointer and dma-buf, plain vs sparse buffers. The header lines before it give `residencyNonResidentStrict`, `minImportedHostPointerAlignment`, `sparseResidencyAliased` and, per backend, the sparse `block`. |
 | `S1` | A sparse "guest VA" buffer bound to imported memfd backing, with every VA block mapped to a noncontiguous physical block and one alias. The GPU copy returns the right bytes. |
 | `S2` | A GPU fill through a VA block lands at its physical offset in the memfd mapping. |
 | `S3` | Remap: rebinding one VA block to another physical block changes what the GPU reads. |
