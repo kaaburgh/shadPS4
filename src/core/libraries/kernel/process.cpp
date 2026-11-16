@@ -3,6 +3,7 @@
 
 #include "common/elf_info.h"
 #include "common/logging/log.h"
+#include "common/uma_census.h"
 #include "core/emulator_settings.h"
 #include "core/file_sys/fs.h"
 #include "core/libraries/kernel/orbis_error.h"
@@ -293,6 +294,10 @@ u32 PS4_SYSV_ABI posix_getuid() {
 }
 
 s32 PS4_SYSV_ABI exit(s32 status) {
+    // The trap below skips atexit handlers. Close an E0 capture first, so that a guest that
+    // exits normally leaves a complete one. Does nothing when no capture is being recorded.
+    UmaCensus::Metadata("guest_exit_status", std::to_string(status));
+    UmaCensus::Shutdown();
     UNREACHABLE_MSG("Exiting with status code {}", status);
     return 0;
 }

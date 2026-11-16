@@ -6,14 +6,17 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <thread>
+#include <vector>
 #include <nlohmann/json.hpp>
 #include "common/scm_rev.h"
 #include "common/uma_census.h"
 #ifdef __linux__
+#include <fcntl.h>
 #include <sys/syscall.h>
 #include <sys/utsname.h>
 #include <time.h>
@@ -35,7 +38,8 @@ std::jthread collector;
 std::mutex metadata_mutex;
 nlohmann::json metadata;
 std::filesystem::path directory;
-FILE* output{};
+int output = -1;
+bool write_failed{};
 uint64_t limit_bytes = 512ULL << 20;
 uint64_t start_ns{}, tail{};
 void (*stop_observers)(){};
@@ -50,23 +54,59 @@ void SaveMetadata(bool final) {
                                           std::chrono::system_clock::now().time_since_epoch())
                                           .count();
     metadata["clean_shutdown"] = final;
+    // Replace the previous metadata only with a file that was written in full. On a full disk
+    // the older metadata stays, and it says that the capture was not closed.
     auto temporary = directory / "metadata.json.tmp";
     std::ofstream file(temporary);
     file << metadata.dump(2) << '\n';
     file.close();
-    std::filesystem::rename(temporary, directory / "metadata.json");
+    std::error_code error;
+    if (file.fail())
+        std::filesystem::remove(temporary, error);
+    else
+        std::filesystem::rename(temporary, directory / "metadata.json", error);
+}
+// events.bin holds whole records in sequence order and nothing else. The first failed or short
+// write ends the file: it is cut back to the last whole record and never written again, because
+// records appended after a hole would be read at the wrong offset.
+void Write(const std::vector<Event>& batch) {
+#ifdef __linux__
+    const char* data = reinterpret_cast<const char*>(batch.data());
+    size_t left = batch.size() * sizeof(Event), done = 0;
+    while (left && !write_failed) {
+        const auto count = write(output, data + done, left);
+        if (count > 0) {
+            done += count;
+            left -= count;
+        } else if (count == 0 || errno != EINTR) {
+            write_failed = true;
+            const int error = errno;
+            const auto whole = written.load() + done / sizeof(Event);
+            (void)!ftruncate(output, whole * sizeof(Event));
+            std::fprintf(stderr, "UMA E0 capture stopped after %llu events: %s\n",
+                         static_cast<unsigned long long>(whole), strerror(error));
+            std::scoped_lock lock{metadata_mutex};
+            metadata["write_error"] = strerror(error);
+        }
+    }
+    written.fetch_add(done / sizeof(Event), std::memory_order_relaxed);
+    dropped.fetch_add(batch.size() - done / sizeof(Event), std::memory_order_relaxed);
+#endif
 }
 void Collect() {
     uint64_t last_save = 0;
+    std::vector<Event> batch;
+    batch.reserve(8192);
     for (;;) {
         size_t drained = 0;
+        batch.clear();
         while (drained < 8192) {
             auto& slot = slots[tail % Capacity];
             if (slot.ticket.load(std::memory_order_acquire) != tail + 1)
                 break;
-            if ((written.load() + 1) * sizeof(Event) <= limit_bytes &&
-                fwrite(&slot.event, sizeof(Event), 1, output) == 1) {
-                written.fetch_add(1, std::memory_order_relaxed);
+            if (!write_failed &&
+                (written.load() + batch.size() + 1) * sizeof(Event) <= limit_bytes) {
+                batch.push_back(slot.event);
             } else {
                 dropped.fetch_add(1, std::memory_order_relaxed);
             }
@@ -74,8 +114,9 @@ void Collect() {
             ++tail;
             ++drained;
         }
+        // Written at once, without a stdio buffer: written_events is what the file holds.
+        Write(batch);
         if (Now() - last_save > 250000000 || stopping.load()) {
-            fflush(output);
             SaveMetadata(false);
             last_save = Now();
         }
@@ -84,8 +125,10 @@ void Collect() {
         if (drained == 0)
             std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-    fclose(output);
-    output = nullptr;
+#ifdef __linux__
+    close(output);
+#endif
+    output = -1;
     SaveMetadata(true);
 }
 } // namespace
@@ -160,15 +203,16 @@ bool Initialize() {
         std::fprintf(stderr, "UMA E0 requires a new capture directory: %s\n", path);
         return false;
     }
-    output = fopen((directory / "events.bin").c_str(), "wb");
-    if (!output)
+    output =
+        open((directory / "events.bin").c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
+    if (output < 0)
         return false;
     if (const auto* budget = std::getenv("SHADPS4_UMA_E0_MAX_BYTES")) {
         char* end{};
         auto parsed = strtoull(budget, &end, 10);
         if (*end || parsed < sizeof(Event)) {
-            fclose(output);
-            output = nullptr;
+            close(output);
+            output = -1;
             return false;
         }
         limit_bytes = parsed;
