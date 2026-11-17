@@ -1,0 +1,8 @@
+{
+  "parse_time_write_data": 6,
+  "parse_time_write_data_right_after_finish": 6,
+  "finish_starts_by_caller": {
+    "1": 6
+  },
+  "verdict": "FAIL"
+}

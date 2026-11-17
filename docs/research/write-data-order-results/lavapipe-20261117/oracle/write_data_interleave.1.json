@@ -1,0 +1,10 @@
+{
+  "gpu_timeline_writes": 30,
+  "gpu_timeline_writes_after_submitted_dispatch": 2,
+  "parse_time_write_data": 1,
+  "timeline_ordered_after_unexecuted_dispatch": 28,
+  "finish_starts_by_caller": {
+    "8": 1
+  },
+  "verdict": "PASS"
+}

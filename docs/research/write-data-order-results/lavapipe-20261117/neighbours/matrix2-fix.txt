@@ -1,0 +1,39 @@
+pm4_controls mirror-precise status=PASS
+pm4_controls shared-precise status=PASS
+pm4_controls shared-disabled status=PASS
+dma_order mirror-precise status=PASS
+dma_order shared-precise status=PASS
+dma_order shared-disabled status=PASS
+dma_mixed_endpoints mirror-precise status=PASS
+dma_mixed_endpoints shared-precise status=PASS
+dma_mixed_endpoints shared-disabled status=PASS
+buffer_cpu_rewrite mirror-precise status=PASS
+buffer_cpu_rewrite shared-precise status=PASS
+buffer_cpu_rewrite shared-disabled status=PASS
+buffer_pingpong mirror-precise status=PASS
+buffer_pingpong shared-precise status=PASS
+buffer_pingpong shared-disabled status=PASS
+ordered_async_handoff mirror-precise status=PASS
+ordered_async_handoff shared-precise status=PASS
+ordered_async_handoff shared-disabled status=PASS
+rt_buffer_order mirror-precise status=FAIL reason=saw_cpu_words
+rt_buffer_order shared-precise status=FAIL reason=saw_cpu_words
+rt_buffer_order shared-disabled status=FAIL reason=saw_cpu_words
+image_buffer_alias mirror-precise status=FAIL reason=draw_not_visible
+image_buffer_alias shared-precise status=PASS
+image_buffer_alias shared-disabled status=PASS
+image_source_same_submit mirror-precise status=FAIL reason=draw_not_visible
+image_source_same_submit shared-precise status=PASS
+image_source_same_submit shared-disabled status=PASS
+tiled_rt_buffer_read mirror-precise status=FAIL reason=buffer_saw_stale_memory
+tiled_rt_buffer_read shared-precise status=FAIL reason=buffer_saw_stale_memory
+tiled_rt_buffer_read shared-disabled status=FAIL reason=buffer_saw_stale_memory
+gpu_solid_rt mirror-precise status=PASS
+gpu_solid_rt shared-precise status=PASS
+gpu_solid_rt shared-disabled status=PASS
+shader_alu mirror-precise 
+shader_alu shared-precise 
+shader_alu shared-disabled 
+present_transfer mirror-precise status=PASS
+present_transfer shared-precise status=PASS
+present_transfer shared-disabled status=PASS

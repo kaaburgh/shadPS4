@@ -1,0 +1,33 @@
+buffer_compute_roundtrip mirror-precise exit=0 status=PASS
+buffer_compute_roundtrip shared-precise exit=0 status=PASS
+buffer_compute_roundtrip shared-disabled exit=0 status=PASS
+buffer_granularity_matrix mirror-precise exit=0 status=PASS
+buffer_granularity_matrix shared-precise exit=0 status=PASS
+buffer_granularity_matrix shared-disabled exit=0 status=PASS
+buffer_page_false_sharing mirror-precise exit=0 status=PASS
+buffer_page_false_sharing shared-precise exit=0 status=PASS
+buffer_page_false_sharing shared-disabled exit=0 status=PASS
+cond_exec_gpu_predicate mirror-precise exit=0 status=PASS
+cond_exec_gpu_predicate shared-precise exit=1 status=FAIL reason=branch_skipped
+cond_exec_gpu_predicate shared-disabled exit=1 status=FAIL reason=branch_skipped
+dma_alias_order mirror-precise exit=1 status=FAIL reason=a_dispatch_after_fill
+dma_alias_order shared-precise exit=1 status=FAIL reason=a_dispatch_after_fill
+dma_alias_order shared-disabled exit=1 status=FAIL reason=a_dispatch_after_fill
+fallback_in_shared mirror-precise exit=0 status=PASS
+fallback_in_shared shared-precise exit=0 status=PASS
+fallback_in_shared shared-disabled exit=1 status=FAIL reason=gpu_write_not_in_guest_memory
+map_unmap_reuse mirror-precise exit=0 status=PASS
+map_unmap_reuse shared-precise exit=0 status=PASS
+map_unmap_reuse shared-disabled exit=0 status=PASS
+physical_alias mirror-precise exit=1 status=FAIL reason=gpu_stale_alias
+physical_alias shared-precise exit=0 status=PASS
+physical_alias shared-disabled exit=0 status=PASS
+uma_churn mirror-precise exit=0 status=PASS
+uma_churn shared-precise exit=0 status=PASS
+uma_churn shared-disabled exit=0 status=PASS
+write_data_interleave mirror-precise exit=0 status=PASS
+write_data_interleave shared-precise exit=0 status=PASS
+write_data_interleave shared-disabled exit=0 status=PASS
+write_data_order mirror-precise exit=0 status=PASS
+write_data_order shared-precise exit=0 status=PASS
+write_data_order shared-disabled exit=0 status=PASS
