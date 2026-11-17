@@ -28,6 +28,7 @@
 //                          [--bw-mib N, 0 skips]
 //        ./uma_gpuvm_probe --backend shifted-dmabuf|shifted-control|stitched-dmabuf|
 //                          stitched-control [--block-kib N, default 64]
+//                          [--store-mib N, default 2: guest memory covered by the imports]
 //        ./uma_gpuvm_probe --backend validation-canary
 // Exit:  0 if every run test passed, 1 if any failed, 2 on setup error.
 
@@ -1289,10 +1290,11 @@ static const char* first_detail(World* w) {
     return w->detail[0] ? w->detail : "no mismatch";
 }
 
-static void shifted_tests(int control, VkDeviceSize block) {
+static void shifted_tests(int control, VkDeviceSize block, uint32_t store_blocks) {
     World world, *w = &world;
     const char* why = NULL;
-    const int ready = world_init(w, control, block, 32, (uint32_t)(block / GUEST_PAGE) + 4, &why);
+    const int ready =
+        world_init(w, control, block, store_blocks, (uint32_t)(block / GUEST_PAGE) + 4, &why);
     if (ready <= 0) {
         result("T1", ready, "shifted %s: %s", w->name, why);
         world_free(w);
@@ -1328,6 +1330,12 @@ static void shifted_tests(int control, VkDeviceSize block) {
            "shifted %s: GPU reads %u views of the same pages at phases 0..%u KiB, a 2-block "
            "mapping at phase 16 KiB and both controls (%u mismatches; %s)",
            w->name, r, (r - 1) * 16, bad, first_detail(w));
+
+    // The kernel accounts a memory object when a submission first uses it, not at the bind.
+    printf("    after the first GPU use: gtt_used %+lld bytes; %u memory objects of %llu bytes "
+           "over store 0, 1 over store 1\n",
+           gtt_used() - gtt_before, control ? 1 : r,
+           (unsigned long long)(control ? w->store_size : w->store_size - block));
 
     // T2: a GPU write through each phase must be seen through every other phase and by the CPU.
     bad = 0;
@@ -1371,10 +1379,10 @@ static void shifted_tests(int control, VkDeviceSize block) {
     world_free(w);
 }
 
-static void stitched_tests(int control, VkDeviceSize block) {
+static void stitched_tests(int control, VkDeviceSize block, uint32_t store_blocks) {
     World world, *w = &world;
     const char* why = NULL;
-    const int ready = world_init(w, control, block, 32, 6, &why);
+    const int ready = world_init(w, control, block, store_blocks, 6, &why);
     if (ready <= 0) {
         result("U1", ready, "stitched %s: %s", w->name, why);
         world_free(w);
@@ -1407,6 +1415,7 @@ static void stitched_tests(int control, VkDeviceSize block) {
            gtt_used() - gtt_before);
 
     uint32_t bad = verify(w);
+    printf("    after the first GPU use: gtt_used %+lld bytes\n", gtt_used() - gtt_before);
     result("U1", bad == 0,
            "stitched %s: GPU reads 3 blocks built from guest pages %u,%u,.. (irregular), two "
            "runs, and a consecutive run, next to ordinary views (%u mismatches; %s)",
@@ -1556,7 +1565,7 @@ static void validation_canary(void) {
 int main(int argc, char** argv) {
     int device_index = 0;
     const char* backend = "auto";
-    VkDeviceSize mib = 8, bw_mib = 64, block_kib = 64;
+    VkDeviceSize mib = 8, bw_mib = 64, block_kib = 64, store_mib = 2;
     for (int i = 1; i + 1 < argc; i += 2) {
         if (!strcmp(argv[i], "--device"))
             device_index = atoi(argv[i + 1]);
@@ -1568,6 +1577,8 @@ int main(int argc, char** argv) {
             bw_mib = strtoull(argv[i + 1], NULL, 10);
         else if (!strcmp(argv[i], "--block-kib"))
             block_kib = strtoull(argv[i + 1], NULL, 10);
+        else if (!strcmp(argv[i], "--store-mib"))
+            store_mib = strtoull(argv[i + 1], NULL, 10);
     }
     setup(device_index);
 
@@ -1597,10 +1608,17 @@ int main(int argc, char** argv) {
     // stitched-control.
     if (!strncmp(backend, "shifted-", 8) || !strncmp(backend, "stitched-", 9)) {
         const int control = strstr(backend, "-control") != NULL;
+        // The guest memory the imports cover. The tests touch the same pages whatever its
+        // size; a larger store shows what the imports cost.
+        const uint32_t store_blocks = (uint32_t)((store_mib << 10) / (block_kib ? block_kib : 1));
+        if (!block_kib || store_blocks < 32 || store_mib > 1024) {
+            fprintf(stderr, "--store-mib must give 32 blocks or more, and at most 1024 MiB\n");
+            return 2;
+        }
         if (backend[1] == 'h')
-            shifted_tests(control, block_kib << 10);
+            shifted_tests(control, block_kib << 10, store_blocks);
         else
-            stitched_tests(control, block_kib << 10);
+            stitched_tests(control, block_kib << 10, store_blocks);
         printf("summary: %d passed, %d failed\n", passes, failures);
         vkDestroyCommandPool(dev, pool, NULL);
         vkDestroyDevice(dev, NULL);

@@ -9,7 +9,8 @@
 #
 # OUT_DIR must not exist. SET is "gate" (default: S1-S3 on driver memory and on dma-buf) or
 # "all" (the gate, then the shifted and stitched import tests T and U, each on driver memory
-# and on dma-buf).
+# and on dma-buf, and the shifted test again over 16 MiB of guest memory to show what the
+# imports cost).
 # Environment: PROBE_DEVICE (Vulkan device index, default 0), PROBE_MIB (default 16),
 # PROBE_BLOCK_KIB (block of the T and U tests, default 64), CC (default cc).
 # Needs a C compiler, libvulkan headers and, for dma-buf, read/write access to /dev/udmabuf.
@@ -49,7 +50,9 @@ all="$gate
 shifted-control|--backend shifted-control --block-kib $block_kib
 shifted-dmabuf|--backend shifted-dmabuf --block-kib $block_kib
 stitched-control|--backend stitched-control --block-kib $block_kib
-stitched-dmabuf|--backend stitched-dmabuf --block-kib $block_kib"
+stitched-dmabuf|--backend stitched-dmabuf --block-kib $block_kib
+shifted-control-16m|--backend shifted-control --block-kib $block_kib --store-mib 16
+shifted-dmabuf-16m|--backend shifted-dmabuf --block-kib $block_kib --store-mib 16"
 case $set_name in
 gate) tests=$gate ;;
 all) tests=$all ;;
@@ -203,6 +206,10 @@ count() { grep -c "^$1\$" "$out/.verdicts"; }
 passed=$(count passed) skipped=$(count skipped) failed=$(count failed)
 rm -f "$out/.verdicts"
 echo "result: $passed runs passed, $skipped skipped, $failed failed" >>"$out/summary.txt"
-(cd "$out" && find . -type f ! -name SHA256SUMS | sort | xargs sha256sum >SHA256SUMS)
+# The binary is hashed in environment.txt and left out of SHA256SUMS, so that a copy of
+# OUT_DIR without it still verifies.
+echo "binary_sha256: $(sha256sum <"$out/uma_gpuvm_probe" | cut -d' ' -f1)" >>"$out/environment.txt"
+(cd "$out" && find . -type f ! -name SHA256SUMS ! -name uma_gpuvm_probe | sort |
+    xargs sha256sum >SHA256SUMS)
 cat "$out/summary.txt"
 [ "$failed" -eq 0 ]
