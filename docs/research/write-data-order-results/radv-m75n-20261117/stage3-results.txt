@@ -1,0 +1,126 @@
+baseline buffer_compute_roundtrip.mirror-precise.1 name=buffer_compute_roundtrip status=PASS words=16384 bytes=65536 dispatch=256x1x1 checksum=42584dc5 dcb_bytes=1200
+baseline buffer_compute_roundtrip.shared-disabled.1 name=buffer_compute_roundtrip status=PASS words=16384 bytes=65536 dispatch=256x1x1 checksum=42584dc5 dcb_bytes=1200
+baseline buffer_compute_roundtrip.shared-precise.1 name=buffer_compute_roundtrip status=PASS words=16384 bytes=65536 dispatch=256x1x1 checksum=42584dc5 dcb_bytes=1200
+baseline buffer_pingpong.mirror-precise.1 name=buffer_pingpong status=PASS generations=8 words=16384 bytes_per_part=65536 handoffs=16 checksum=5a2c75c5 dcb_bytes=1200
+baseline buffer_pingpong.shared-disabled.1 name=buffer_pingpong status=PASS generations=8 words=16384 bytes_per_part=65536 handoffs=16 checksum=5a2c75c5 dcb_bytes=1200
+baseline buffer_pingpong.shared-precise.1 name=buffer_pingpong status=PASS generations=8 words=16384 bytes_per_part=65536 handoffs=16 checksum=5a2c75c5 dcb_bytes=1200
+baseline cond_exec_gpu_predicate.mirror-precise.1 name=cond_exec_gpu_predicate status=PASS cases=4
+baseline cond_exec_gpu_predicate.shared-disabled.1 name=cond_exec_gpu_predicate status=FAIL reason=branch_skipped case=gpu_pred_1 index=0 expected=00000007 got=0badc0de failed_cases=2 failed=gpu_pred_1,gpu_pred_0
+baseline cond_exec_gpu_predicate.shared-precise.1 name=cond_exec_gpu_predicate status=FAIL reason=branch_skipped case=gpu_pred_1 index=0 expected=00000007 got=0badc0de failed_cases=2 failed=gpu_pred_1,gpu_pred_0
+baseline dma_alias_order.mirror-precise.1 name=dma_alias_order status=FAIL reason=a_dispatch_after_fill case=contiguous_fill index=0 expected=22222222 got=31313131 failed_cases=4 failed=contiguous_fill,contiguous_copy,noncontiguous_fill,noncontiguous_copy
+baseline dma_alias_order.shared-disabled.1 name=dma_alias_order status=FAIL reason=a_dispatch_after_fill case=noncontiguous_fill index=0 expected=22222222 got=31313131 failed_cases=2 failed=noncontiguous_fill,noncontiguous_copy
+baseline dma_alias_order.shared-precise.1 name=dma_alias_order status=FAIL reason=a_dispatch_after_fill case=noncontiguous_fill index=0 expected=22222222 got=31313131 failed_cases=2 failed=noncontiguous_fill,noncontiguous_copy
+baseline dma_order.mirror-precise.1 name=dma_order status=PASS cases=4
+baseline dma_order.shared-disabled.1 name=dma_order status=PASS cases=4
+baseline dma_order.shared-precise.1 name=dma_order status=PASS cases=4
+baseline fallback_in_shared.mirror-precise.1 name=fallback_in_shared status=PASS cases=3
+baseline fallback_in_shared.shared-disabled.1 name=fallback_in_shared status=FAIL reason=gpu_write_not_in_guest_memory case=chunk_straddle index=0 expected=46424b21 got=49494949 failed_cases=2 failed=chunk_straddle,noncontiguous
+baseline fallback_in_shared.shared-precise.1 name=fallback_in_shared status=PASS cases=3
+baseline map_unmap_reuse.mirror-precise.1 name=map_unmap_reuse status=PASS lifetimes=3 transitions=remap_keep,release_reuse same_direct_memory=1 checksum=3dcee01d
+baseline map_unmap_reuse.shared-disabled.1 name=map_unmap_reuse status=PASS lifetimes=3 transitions=remap_keep,release_reuse same_direct_memory=1 checksum=3dcee01d
+baseline map_unmap_reuse.shared-precise.1 name=map_unmap_reuse status=PASS lifetimes=3 transitions=remap_keep,release_reuse same_direct_memory=1 checksum=3dcee01d
+baseline ordered_async_handoff.mirror-precise.1 name=ordered_async_handoff status=PASS rounds=4 queued_ahead=4 checksum=1a2b04a7
+baseline ordered_async_handoff.shared-disabled.1 name=ordered_async_handoff status=PASS rounds=4 queued_ahead=4 checksum=1a2b04a7
+baseline ordered_async_handoff.shared-precise.1 name=ordered_async_handoff status=PASS rounds=4 queued_ahead=4 checksum=1a2b04a7
+baseline physical_alias.mirror-precise.1 name=physical_alias status=FAIL reason=gpu_stale_alias case=cpu_to_gpu_again index=0 expected=cd28e299 got=f6f86569 failed_cases=3 failed=cpu_to_gpu_again,gpu_to_cpu,gpu_to_gpu
+baseline physical_alias.shared-disabled.1 name=physical_alias status=PASS cases=8 region_words=16384
+baseline physical_alias.shared-precise.1 name=physical_alias status=PASS cases=8 region_words=16384
+baseline pm4_controls.mirror-precise.1 name=pm4_controls status=PASS cases=6
+baseline pm4_controls.shared-disabled.1 name=pm4_controls status=PASS cases=6
+baseline pm4_controls.shared-precise.1 name=pm4_controls status=PASS cases=6
+baseline uma_churn.mirror-precise.1 name=uma_churn status=PASS generations=16 pages=1024 remaps=3 digest=30e87670
+baseline uma_churn.shared-disabled.1 name=uma_churn status=PASS generations=16 pages=1024 remaps=3 digest=30e87670
+baseline uma_churn.shared-precise.1 name=uma_churn status=PASS generations=16 pages=1024 remaps=3 digest=30e87670
+baseline write_data_interleave.mirror-precise.1 name=write_data_interleave status=PASS cases=6
+baseline write_data_interleave.mirror-precise.2 name=write_data_interleave status=PASS cases=6
+baseline write_data_interleave.mirror-precise.3 name=write_data_interleave status=PASS cases=6
+baseline write_data_interleave.mirror-precise.4 name=write_data_interleave status=PASS cases=6
+baseline write_data_interleave.mirror-precise.5 name=write_data_interleave status=PASS cases=6
+baseline write_data_interleave.shared-disabled.1 name=write_data_interleave status=FAIL reason=saw_later_write case=interleave index=0 expected=0badf00d got=f1fe10a5 failed_cases=2 failed=interleave,gpu_then_cp
+baseline write_data_interleave.shared-disabled.2 name=write_data_interleave status=FAIL reason=saw_later_write case=interleave index=0 expected=0badf00d got=f1fe10a5 failed_cases=2 failed=interleave,gpu_then_cp
+baseline write_data_interleave.shared-disabled.3 name=write_data_interleave status=FAIL reason=saw_later_write case=interleave index=0 expected=0badf00d got=f1fe10a5 failed_cases=2 failed=interleave,gpu_then_cp
+baseline write_data_interleave.shared-disabled.4 name=write_data_interleave status=FAIL reason=saw_later_write case=interleave index=0 expected=0badf00d got=f1fe10a5 failed_cases=2 failed=interleave,gpu_then_cp
+baseline write_data_interleave.shared-disabled.5 name=write_data_interleave status=FAIL reason=saw_later_write case=interleave index=0 expected=0badf00d got=f1fe10a5 failed_cases=2 failed=interleave,gpu_then_cp
+baseline write_data_interleave.shared-precise.1 name=write_data_interleave status=FAIL reason=saw_later_write case=interleave index=0 expected=0badf00d got=f1fe10a5 failed_cases=2 failed=interleave,gpu_then_cp
+baseline write_data_interleave.shared-precise.2 name=write_data_interleave status=FAIL reason=saw_later_write case=interleave index=0 expected=0badf00d got=f1fe10a5 failed_cases=2 failed=interleave,gpu_then_cp
+baseline write_data_interleave.shared-precise.3 name=write_data_interleave status=FAIL reason=saw_later_write case=interleave index=0 expected=0badf00d got=f1fe10a5 failed_cases=2 failed=interleave,gpu_then_cp
+baseline write_data_interleave.shared-precise.4 name=write_data_interleave status=FAIL reason=saw_later_write case=interleave index=0 expected=0badf00d got=f1fe10a5 failed_cases=2 failed=interleave,gpu_then_cp
+baseline write_data_interleave.shared-precise.5 name=write_data_interleave status=FAIL reason=saw_later_write case=interleave index=0 expected=0badf00d got=f1fe10a5 failed_cases=2 failed=interleave,gpu_then_cp
+baseline write_data_order.mirror-precise.1 name=write_data_order status=PASS cases=6
+baseline write_data_order.mirror-precise.2 name=write_data_order status=PASS cases=6
+baseline write_data_order.mirror-precise.3 name=write_data_order status=PASS cases=6
+baseline write_data_order.mirror-precise.4 name=write_data_order status=PASS cases=6
+baseline write_data_order.mirror-precise.5 name=write_data_order status=PASS cases=6
+baseline write_data_order.shared-disabled.1 name=write_data_order status=FAIL reason=a_saw_later_write case=large_a index=0 expected=74e78c18 got=d14229bd failed_cases=2 failed=large_a,small_a
+baseline write_data_order.shared-disabled.2 name=write_data_order status=FAIL reason=a_saw_later_write case=large_a index=0 expected=74e78c18 got=d14229bd failed_cases=2 failed=large_a,small_a
+baseline write_data_order.shared-disabled.3 name=write_data_order status=FAIL reason=a_saw_later_write case=large_a index=0 expected=74e78c18 got=d14229bd failed_cases=2 failed=large_a,small_a
+baseline write_data_order.shared-disabled.4 name=write_data_order status=FAIL reason=a_saw_later_write case=large_a index=0 expected=74e78c18 got=d14229bd failed_cases=2 failed=large_a,small_a
+baseline write_data_order.shared-disabled.5 name=write_data_order status=FAIL reason=a_saw_later_write case=large_a index=0 expected=74e78c18 got=d14229bd failed_cases=2 failed=large_a,small_a
+baseline write_data_order.shared-precise.1 name=write_data_order status=FAIL reason=a_saw_later_write case=large_a index=0 expected=74e78c18 got=d14229bd failed_cases=2 failed=large_a,small_a
+baseline write_data_order.shared-precise.2 name=write_data_order status=FAIL reason=a_saw_later_write case=large_a index=0 expected=74e78c18 got=d14229bd failed_cases=2 failed=large_a,small_a
+baseline write_data_order.shared-precise.3 name=write_data_order status=FAIL reason=a_saw_later_write case=large_a index=0 expected=74e78c18 got=d14229bd failed_cases=2 failed=large_a,small_a
+baseline write_data_order.shared-precise.4 name=write_data_order status=FAIL reason=a_saw_later_write case=large_a index=0 expected=74e78c18 got=d14229bd failed_cases=2 failed=large_a,small_a
+baseline write_data_order.shared-precise.5 name=write_data_order status=FAIL reason=a_saw_later_write case=large_a index=0 expected=74e78c18 got=d14229bd failed_cases=2 failed=large_a,small_a
+fix buffer_compute_roundtrip.mirror-precise.1 name=buffer_compute_roundtrip status=PASS words=16384 bytes=65536 dispatch=256x1x1 checksum=42584dc5 dcb_bytes=1200
+fix buffer_compute_roundtrip.shared-disabled.1 name=buffer_compute_roundtrip status=PASS words=16384 bytes=65536 dispatch=256x1x1 checksum=42584dc5 dcb_bytes=1200
+fix buffer_compute_roundtrip.shared-precise.1 name=buffer_compute_roundtrip status=PASS words=16384 bytes=65536 dispatch=256x1x1 checksum=42584dc5 dcb_bytes=1200
+fix buffer_pingpong.mirror-precise.1 name=buffer_pingpong status=PASS generations=8 words=16384 bytes_per_part=65536 handoffs=16 checksum=5a2c75c5 dcb_bytes=1200
+fix buffer_pingpong.shared-disabled.1 name=buffer_pingpong status=PASS generations=8 words=16384 bytes_per_part=65536 handoffs=16 checksum=5a2c75c5 dcb_bytes=1200
+fix buffer_pingpong.shared-precise.1 name=buffer_pingpong status=PASS generations=8 words=16384 bytes_per_part=65536 handoffs=16 checksum=5a2c75c5 dcb_bytes=1200
+fix cond_exec_gpu_predicate.mirror-precise.1 name=cond_exec_gpu_predicate status=PASS cases=4
+fix cond_exec_gpu_predicate.shared-disabled.1 name=cond_exec_gpu_predicate status=FAIL reason=branch_skipped case=gpu_pred_1 index=0 expected=00000007 got=0badc0de failed_cases=2 failed=gpu_pred_1,gpu_pred_0
+fix cond_exec_gpu_predicate.shared-precise.1 name=cond_exec_gpu_predicate status=FAIL reason=branch_skipped case=gpu_pred_1 index=0 expected=00000007 got=0badc0de failed_cases=2 failed=gpu_pred_1,gpu_pred_0
+fix dma_alias_order.mirror-precise.1 name=dma_alias_order status=FAIL reason=a_dispatch_after_fill case=contiguous_fill index=0 expected=22222222 got=31313131 failed_cases=4 failed=contiguous_fill,contiguous_copy,noncontiguous_fill,noncontiguous_copy
+fix dma_alias_order.shared-disabled.1 name=dma_alias_order status=FAIL reason=a_dispatch_after_fill case=noncontiguous_fill index=0 expected=22222222 got=31313131 failed_cases=2 failed=noncontiguous_fill,noncontiguous_copy
+fix dma_alias_order.shared-precise.1 name=dma_alias_order status=FAIL reason=a_dispatch_after_fill case=noncontiguous_fill index=0 expected=22222222 got=31313131 failed_cases=2 failed=noncontiguous_fill,noncontiguous_copy
+fix dma_order.mirror-precise.1 name=dma_order status=PASS cases=4
+fix dma_order.shared-disabled.1 name=dma_order status=PASS cases=4
+fix dma_order.shared-precise.1 name=dma_order status=PASS cases=4
+fix fallback_in_shared.mirror-precise.1 name=fallback_in_shared status=PASS cases=3
+fix fallback_in_shared.shared-disabled.1 name=fallback_in_shared status=FAIL reason=gpu_write_not_in_guest_memory case=chunk_straddle index=0 expected=46424b21 got=49494949 failed_cases=2 failed=chunk_straddle,noncontiguous
+fix fallback_in_shared.shared-precise.1 name=fallback_in_shared status=PASS cases=3
+fix map_unmap_reuse.mirror-precise.1 name=map_unmap_reuse status=PASS lifetimes=3 transitions=remap_keep,release_reuse same_direct_memory=1 checksum=3dcee01d
+fix map_unmap_reuse.shared-disabled.1 name=map_unmap_reuse status=PASS lifetimes=3 transitions=remap_keep,release_reuse same_direct_memory=1 checksum=3dcee01d
+fix map_unmap_reuse.shared-precise.1 name=map_unmap_reuse status=PASS lifetimes=3 transitions=remap_keep,release_reuse same_direct_memory=1 checksum=3dcee01d
+fix ordered_async_handoff.mirror-precise.1 name=ordered_async_handoff status=PASS rounds=4 queued_ahead=4 checksum=1a2b04a7
+fix ordered_async_handoff.shared-disabled.1 name=ordered_async_handoff status=PASS rounds=4 queued_ahead=4 checksum=1a2b04a7
+fix ordered_async_handoff.shared-precise.1 name=ordered_async_handoff status=PASS rounds=4 queued_ahead=4 checksum=1a2b04a7
+fix physical_alias.mirror-precise.1 name=physical_alias status=FAIL reason=gpu_stale_alias case=cpu_to_gpu_again index=0 expected=cd28e299 got=f6f86569 failed_cases=3 failed=cpu_to_gpu_again,gpu_to_cpu,gpu_to_gpu
+fix physical_alias.shared-disabled.1 name=physical_alias status=PASS cases=8 region_words=16384
+fix physical_alias.shared-precise.1 name=physical_alias status=PASS cases=8 region_words=16384
+fix pm4_controls.mirror-precise.1 name=pm4_controls status=PASS cases=6
+fix pm4_controls.shared-disabled.1 name=pm4_controls status=PASS cases=6
+fix pm4_controls.shared-precise.1 name=pm4_controls status=PASS cases=6
+fix uma_churn.mirror-precise.1 name=uma_churn status=PASS generations=16 pages=1024 remaps=3 digest=30e87670
+fix uma_churn.shared-disabled.1 name=uma_churn status=PASS generations=16 pages=1024 remaps=3 digest=30e87670
+fix uma_churn.shared-precise.1 name=uma_churn status=PASS generations=16 pages=1024 remaps=3 digest=30e87670
+fix write_data_interleave.mirror-precise.1 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.mirror-precise.2 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.mirror-precise.3 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.mirror-precise.4 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.mirror-precise.5 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.shared-disabled.1 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.shared-disabled.2 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.shared-disabled.3 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.shared-disabled.4 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.shared-disabled.5 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.shared-precise.1 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.shared-precise.2 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.shared-precise.3 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.shared-precise.4 name=write_data_interleave status=PASS cases=6
+fix write_data_interleave.shared-precise.5 name=write_data_interleave status=PASS cases=6
+fix write_data_order.mirror-precise.1 name=write_data_order status=PASS cases=6
+fix write_data_order.mirror-precise.2 name=write_data_order status=PASS cases=6
+fix write_data_order.mirror-precise.3 name=write_data_order status=PASS cases=6
+fix write_data_order.mirror-precise.4 name=write_data_order status=PASS cases=6
+fix write_data_order.mirror-precise.5 name=write_data_order status=PASS cases=6
+fix write_data_order.shared-disabled.1 name=write_data_order status=PASS cases=6
+fix write_data_order.shared-disabled.2 name=write_data_order status=PASS cases=6
+fix write_data_order.shared-disabled.3 name=write_data_order status=PASS cases=6
+fix write_data_order.shared-disabled.4 name=write_data_order status=PASS cases=6
+fix write_data_order.shared-disabled.5 name=write_data_order status=PASS cases=6
+fix write_data_order.shared-precise.1 name=write_data_order status=PASS cases=6
+fix write_data_order.shared-precise.2 name=write_data_order status=PASS cases=6
+fix write_data_order.shared-precise.3 name=write_data_order status=PASS cases=6
+fix write_data_order.shared-precise.4 name=write_data_order status=PASS cases=6
+fix write_data_order.shared-precise.5 name=write_data_order status=PASS cases=6

@@ -1,0 +1,59 @@
+Date: 2026-11-17 UTC
+[12:03:06.521] weston 14.0.2
+               https://wayland.freedesktop.org
+               Bug reports to: https://gitlab.freedesktop.org/wayland/weston/issues/
+               Build: 14.0.2
+[12:03:06.528] Command line: weston --backend=headless --renderer=gl --no-config --idle-time=0 --socket=e1c-wd-33158 --width=1280 --height=720 --log=/root/Projects/shadps4/e1c-wd-order/logs/after-5e41afe/baseline/fallback_in_shared.shared-precise.1.weston.txt -- python3 open-test/scripts/run-test.py fallback_in_shared --shadps4 /root/Projects/shadps4/e1c-wd-order/build/shadps4 --readbacks precise --shared-backing --timeout 120
+[12:03:06.528] OS: Linux, 6.12.117+deb13-amd64, #1 SMP PREEMPT_DYNAMIC Debian 6.12.117-1 (2026-11-12), x86_64
+[12:03:06.528] Flight recorder: enabled
+[12:03:06.528] Starting with no config file.
+[12:03:06.528] Output repaint window is 7 ms maximum.
+[12:03:06.528] Loading module '/usr/lib/x86_64-linux-gnu/libweston-14/headless-backend.so'
+[12:03:06.537] Loading module '/usr/lib/x86_64-linux-gnu/libweston-14/gl-renderer.so'
+[12:03:06.581] Using rendering device: /dev/dri/renderD128
+[12:03:06.590] EGL version: 1.5
+[12:03:06.590] EGL vendor: Mesa Project
+[12:03:06.590] EGL client APIs: OpenGL OpenGL_ES 
+[12:03:06.590] EGL features:
+               EGL Wayland extension: yes
+               context priority: yes
+               buffer age: no
+               partial update: no
+               swap buffers with damage: no
+               configless context: yes
+               surfaceless context: yes
+               dmabuf support: modifiers
+[12:03:06.593] GL version: OpenGL ES 3.2 Mesa 25.0.7-2+deb13u1
+[12:03:06.593] GLSL version: OpenGL ES GLSL ES 3.20
+[12:03:06.593] GL vendor: AMD
+[12:03:06.593] GL renderer: AMD Radeon Vega 6 Graphics (radeonsi, raven, ACO, DRM 3.61, 6.12.117+deb13-amd64)
+[12:03:06.600] GL ES 3.2 - renderer features:
+               read-back format: ARGB8888
+               glReadPixels supports y-flip: yes
+               glReadPixels supports PBO: yes
+               wl_shm 10 bpc formats: yes
+               wl_shm 16 bpc formats: yes
+               wl_shm half-float formats: yes
+               internal R and RG formats: yes
+               OES_EGL_image_external: yes
+[12:03:06.600] Using GL renderer
+[12:03:06.600] Registered plugin API 'weston_windowed_output_api_headless_v2' of size 16
+[12:03:06.600] Color manager: no-op
+                 protocol support: no
+[12:03:06.600] Output 'headless' attempts EOTF mode SDR and colorimetry mode default.
+[12:03:06.600] Output 'headless' using color profile: stock sRGB color profile
+[12:03:06.602] Output 'headless' enabled with head(s) headless
+[12:03:06.602] Compositor capabilities:
+               arbitrary surface rotation: yes
+               screen capture uses y-flip: yes
+               cursor planes: no
+               arbitrary resolutions: no
+               view mask clipping: yes
+               explicit sync: yes
+               color operations: yes
+               presentation clock: CLOCK_MONOTONIC_RAW, id 4
+               presentation clock resolution: 0.000000001 s
+[12:03:06.602] Loading module '/usr/lib/x86_64-linux-gnu/weston/desktop-shell.so'
+[12:03:06.604] launching '/usr/libexec/weston-keyboard'
+[12:03:06.605] launching '/usr/libexec/weston-desktop-shell'
+[12:03:07.625] BUG: finalizing a layer with views still on it.

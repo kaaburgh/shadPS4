@@ -1,0 +1,178 @@
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/write_data_interleave'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g -MMD -MP --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -I/root/Projects/shadps4/e1c-wd-order/open-test/tests/common -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/write_data_interleave/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/write_data_interleave/write_data_interleave.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/write_data_interleave/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a"  -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/write_data_interleave/write_data_interleave.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/write_data_interleave/write_data_interleave.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/write_data_interleave/write_data_interleave.elf" --paid 0x3800000000000011
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/copy.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/write_data_interleave/copy.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/write_data_interleave/copy.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/write_data_interleave/assets/copy.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/slow_copy.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/write_data_interleave/slow_copy.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/write_data_interleave/slow_copy.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/write_data_interleave/assets/slow_copy.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+cp "forbid-log.txt" "/root/Projects/shadps4/e1c-wd-order/open-test/out/write_data_interleave/forbid-log.txt"
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/write_data_interleave'
+Built write_data_interleave -> /root/Projects/shadps4/e1c-wd-order/open-test/out/write_data_interleave
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/write_data_order'
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/write_data_order'
+Built write_data_order -> /root/Projects/shadps4/e1c-wd-order/open-test/out/write_data_order
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/cond_exec_gpu_predicate'
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/cond_exec_gpu_predicate'
+Built cond_exec_gpu_predicate -> /root/Projects/shadps4/e1c-wd-order/open-test/out/cond_exec_gpu_predicate
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/dma_order'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g -MMD -MP --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -I/root/Projects/shadps4/e1c-wd-order/open-test/tests/common -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_order/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_order/dma_order.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_order/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a"  -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_order/dma_order.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_order/dma_order.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/dma_order/dma_order.elf" --paid 0x3800000000000011
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/copy.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_order/copy.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_order/copy.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/dma_order/assets/copy.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/dma_order'
+Built dma_order -> /root/Projects/shadps4/e1c-wd-order/open-test/out/dma_order
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/dma_alias_order'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g -MMD -MP --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -I/root/Projects/shadps4/e1c-wd-order/open-test/tests/common -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_alias_order/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_alias_order/dma_alias_order.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_alias_order/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a"  -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_alias_order/dma_alias_order.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_alias_order/dma_alias_order.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/dma_alias_order/dma_alias_order.elf" --paid 0x3800000000000011
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/copy.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_alias_order/copy.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/dma_alias_order/copy.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/dma_alias_order/assets/copy.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/dma_alias_order'
+Built dma_alias_order -> /root/Projects/shadps4/e1c-wd-order/open-test/out/dma_alias_order
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/physical_alias'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g -MMD -MP --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -I/root/Projects/shadps4/e1c-wd-order/open-test/tests/common -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/physical_alias/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/physical_alias/physical_alias.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/physical_alias/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a"  -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/physical_alias/physical_alias.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/physical_alias/physical_alias.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/physical_alias/physical_alias.elf" --paid 0x3800000000000011
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/transform.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/physical_alias/transform.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/physical_alias/transform.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/physical_alias/assets/transform.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/physical_alias'
+Built physical_alias -> /root/Projects/shadps4/e1c-wd-order/open-test/out/physical_alias
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/fallback_in_shared'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g -MMD -MP --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -I/root/Projects/shadps4/e1c-wd-order/open-test/tests/common -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/fallback_in_shared/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/fallback_in_shared/fallback_in_shared.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/fallback_in_shared/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a"  -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/fallback_in_shared/fallback_in_shared.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/fallback_in_shared/fallback_in_shared.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/fallback_in_shared/fallback_in_shared.elf" --paid 0x3800000000000011
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/copy.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/fallback_in_shared/copy.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/fallback_in_shared/copy.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/fallback_in_shared/assets/copy.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/fallback_in_shared'
+Built fallback_in_shared -> /root/Projects/shadps4/e1c-wd-order/open-test/out/fallback_in_shared
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/map_unmap_reuse'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g -MMD -MP --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -I/root/Projects/shadps4/e1c-wd-order/open-test/tests/common -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/map_unmap_reuse/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/map_unmap_reuse/map_unmap_reuse.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/map_unmap_reuse/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a"  -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/map_unmap_reuse/map_unmap_reuse.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/map_unmap_reuse/map_unmap_reuse.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/map_unmap_reuse/map_unmap_reuse.elf" --paid 0x3800000000000011
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/transform.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/map_unmap_reuse/transform.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/map_unmap_reuse/transform.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/map_unmap_reuse/assets/transform.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/map_unmap_reuse'
+Built map_unmap_reuse -> /root/Projects/shadps4/e1c-wd-order/open-test/out/map_unmap_reuse
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/buffer_compute_roundtrip'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_compute_roundtrip/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_compute_roundtrip/buffer_compute_roundtrip.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_compute_roundtrip/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a" -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_compute_roundtrip/buffer_compute_roundtrip.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_compute_roundtrip/buffer_compute_roundtrip.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/buffer_compute_roundtrip/buffer_compute_roundtrip.elf" --paid 0x3800000000000011
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/roundtrip.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_compute_roundtrip/roundtrip.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_compute_roundtrip/roundtrip.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/buffer_compute_roundtrip/assets/roundtrip.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/buffer_compute_roundtrip'
+Built buffer_compute_roundtrip -> /root/Projects/shadps4/e1c-wd-order/open-test/out/buffer_compute_roundtrip
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/buffer_pingpong'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_pingpong/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_pingpong/buffer_pingpong.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_pingpong/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a" -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_pingpong/buffer_pingpong.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_pingpong/buffer_pingpong.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/buffer_pingpong/buffer_pingpong.elf" --paid 0x3800000000000011
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/pingpong.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_pingpong/pingpong.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/buffer_pingpong/pingpong.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/buffer_pingpong/assets/pingpong.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/buffer_pingpong'
+Built buffer_pingpong -> /root/Projects/shadps4/e1c-wd-order/open-test/out/buffer_pingpong
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/pm4_controls'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g -MMD -MP --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -I/root/Projects/shadps4/e1c-wd-order/open-test/tests/common -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/pm4_controls/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/pm4_controls/pm4_controls.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/pm4_controls/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a"  -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/pm4_controls/pm4_controls.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/pm4_controls/pm4_controls.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/pm4_controls/pm4_controls.elf" --paid 0x3800000000000011
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/pm4_controls'
+Built pm4_controls -> /root/Projects/shadps4/e1c-wd-order/open-test/out/pm4_controls
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/ordered_async_handoff'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g -MMD -MP --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -I/root/Projects/shadps4/e1c-wd-order/open-test/tests/common -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/ordered_async_handoff/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/ordered_async_handoff/ordered_async_handoff.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/ordered_async_handoff/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a"  -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/ordered_async_handoff/ordered_async_handoff.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/ordered_async_handoff/ordered_async_handoff.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/ordered_async_handoff/ordered_async_handoff.elf" --paid 0x3800000000000011
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/transform.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/ordered_async_handoff/transform.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/ordered_async_handoff/transform.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/ordered_async_handoff/assets/transform.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/ordered_async_handoff'
+Built ordered_async_handoff -> /root/Projects/shadps4/e1c-wd-order/open-test/out/ordered_async_handoff
+make: Entering directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/uma_churn'
+clang -std=c11 -Wall -Wextra -Wpedantic -O2 -g -MMD -MP --target=x86_64-ps4-elf -fPIC -isysroot /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis -isystem /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/include -I/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/include -I/root/Projects/shadps4/e1c-wd-order/open-test/tests/common -c "src/main.c" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/uma_churn/main.o"
+ld.lld -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/uma_churn/uma_churn.raw.elf" "/root/Projects/shadps4/e1c-wd-order/open-test/build/uma_churn/main.o" -m elf_x86_64 -pie --script /root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/link.x --eh-frame-hdr -L/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm/libopengnm.a"  -lc -lkernel -lSceGnmDriver -lSceVideoOut \
+	"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crt1.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crti.o" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/lib/crtn.o"
+OO_PS4_TOOLCHAIN="/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis" "/root/Projects/shadps4/e1c-wd-order/open-test/.deps/openorbis/bin/linux/create-fself" -in="/root/Projects/shadps4/e1c-wd-order/open-test/build/uma_churn/uma_churn.raw.elf" -out="/root/Projects/shadps4/e1c-wd-order/open-test/build/uma_churn/uma_churn.oelf" \
+	--eboot "/root/Projects/shadps4/e1c-wd-order/open-test/out/uma_churn/uma_churn.elf" --paid 0x3800000000000011
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/writer.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/uma_churn/writer.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/uma_churn/writer.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/uma_churn/assets/writer.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+glslc -fshader-stage=compute --target-env=vulkan1.1 "assets/reader.comp.glsl" -o "/root/Projects/shadps4/e1c-wd-order/open-test/build/uma_churn/reader.comp.spv"
+"/root/Projects/shadps4/e1c-wd-order/open-test/.deps/opengnm-psbc/opengnm-psbc" -s compute -f "/root/Projects/shadps4/e1c-wd-order/open-test/build/uma_churn/reader.comp.spv" -o "/root/Projects/shadps4/e1c-wd-order/open-test/out/uma_churn/assets/reader.comp.sb" -4
+SPIR-V WARNING:
+    In file src/compiler/spirv/spirv_to_nir.c:5651
+    Unsupported SPIR-V capability: SpvCapabilityShader (1)
+    20 bytes into the SPIR-V binary
+make: Leaving directory '/root/Projects/shadps4/e1c-wd-order/open-test/tests/uma_churn'
+Built uma_churn -> /root/Projects/shadps4/e1c-wd-order/open-test/out/uma_churn
