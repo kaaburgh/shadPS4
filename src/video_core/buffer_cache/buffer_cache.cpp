@@ -547,6 +547,25 @@ std::optional<std::pair<const Buffer*, u64>> BufferCache::ObtainSharedBuffer(VAd
     return std::make_pair(buffer, block_offset + (device_addr - block_start));
 }
 
+std::optional<std::pair<const Buffer*, u64>> BufferCache::ObtainSharedBufferForCpWrite(VAddr addr,
+                                                                                       u64 size) {
+    if (!shared_backing->IsEnabled() || size == 0) {
+        return std::nullopt;
+    }
+    const VAddr block_start = Common::AlignDown(addr, block_size);
+    ASSERT(Common::AlignUp(addr + size, block_size) - block_start == block_size);
+    // A block outside shared_ranges is mirrored or unused: recorded work holds its own copy or
+    // none, so a parse-time write keeps the mirror semantics. Its chunk is imported already.
+    if (!shared_ranges.Contains(block_start, block_size)) {
+        return std::nullopt;
+    }
+    const auto shared = ObtainSharedBuffer(addr, size, false);
+    if (shared) {
+        scheduler.Census(UmaCensus::Kind::Buffer, addr, size, 3, 0, 3);
+    }
+    return shared;
+}
+
 void BufferCache::MapSharedBlocks(VAddr block_start, VAddr block_end,
                                   vk::DeviceAddress device_addr) {
     boost::container::small_vector<vk::DeviceAddress, 64> entries;

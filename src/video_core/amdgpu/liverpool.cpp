@@ -290,6 +290,12 @@ void Liverpool::Process(std::stop_token stoken) {
             }
             task.resume();
 
+            if (!task.done() && rasterizer) {
+                // The task yields in a wait that may depend on a CP write recorded on the GPU
+                // timeline (WRITE_DATA to shared memory): submit it so that the wait can end.
+                rasterizer->FlushPendingCpWrites();
+            }
+
             if (task.done()) {
                 task.destroy();
 
@@ -300,6 +306,11 @@ void Liverpool::Process(std::stop_token stoken) {
                 std::scoped_lock lock2{submit_mutex};
                 submit_cv.notify_all();
             }
+        }
+
+        if (rasterizer) {
+            // The CP is idle: the guest may wait for a CP write that is only recorded.
+            rasterizer->FlushPendingCpWrites();
         }
 
         if (submit_done) {
@@ -344,6 +355,9 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
         case PM4ItOpcode::DumpConstRam: {
             const auto* dump_const = reinterpret_cast<const PM4DumpConstRam*>(header);
             if (rasterizer)
+                rasterizer->SyncCpAccess(dump_const->Address<VAddr>(), dump_const->Size(),
+                                         u64(PM4ItOpcode::DumpConstRam));
+            if (rasterizer)
                 rasterizer->Census(UmaCensus::Kind::CpuWrite, dump_const->Address<VAddr>(),
                                    dump_const->Size(), u64(PM4ItOpcode::DumpConstRam));
             memcpy(dump_const->Address<void*>(),
@@ -363,6 +377,10 @@ Liverpool::Task Liverpool::ProcessCeUpdate(std::span<const u32> ccb) {
         }
         case PM4ItOpcode::IndirectBufferConst: {
             const auto* indirect_buffer = reinterpret_cast<const PM4CmdIndirectBuffer*>(header);
+            if (rasterizer)
+                rasterizer->SyncCpAccess(reinterpret_cast<VAddr>(indirect_buffer->Address<u32>()),
+                                         u64(indirect_buffer->ib_size) * 4,
+                                         u64(PM4ItOpcode::IndirectBufferConst));
             auto task =
                 ProcessCeUpdate({indirect_buffer->Address<const u32>(), indirect_buffer->ib_size});
             RESUME_CE(task);
@@ -811,6 +829,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         static constexpr u64 OcclusionCounterValidMask = 0x8000000000000000ULL;
                         static constexpr u64 OcclusionCounterStep = 0x2FFFFFFULL;
                         u64* results = event->Address<u64*>();
+                        if (rasterizer)
+                            rasterizer->SyncCpAccess(reinterpret_cast<VAddr>(results),
+                                                     u64(num_counter_pairs) * 16,
+                                                     u64(PM4ItOpcode::EventWrite));
                         for (s32 i = 0; i < num_counter_pairs; ++i, results += 2) {
                             if (rasterizer)
                                 rasterizer->Census(UmaCensus::Kind::CpuWrite,
@@ -935,12 +957,11 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 if (!write_data->wr_one_addr.Value()) {
                     if (rasterizer) {
                         rasterizer->OnFence();
+                        rasterizer->CpWriteData(reinterpret_cast<VAddr>(address), write_data->data,
+                                                data_size, u64(PM4ItOpcode::WriteData));
+                    } else {
+                        std::memcpy(address, write_data->data, data_size);
                     }
-                    if (rasterizer)
-                        rasterizer->Census(UmaCensus::Kind::CpuWrite,
-                                           reinterpret_cast<VAddr>(address), data_size,
-                                           u64(PM4ItOpcode::WriteData));
-                    std::memcpy(address, write_data->data, data_size);
                 } else {
                     UNREACHABLE();
                 }
@@ -958,6 +979,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
             }
             case PM4ItOpcode::MemSemaphore: {
                 const auto* mem_semaphore = reinterpret_cast<const PM4CmdMemSemaphore*>(header);
+                if (rasterizer)
+                    rasterizer->SyncCpAccess(mem_semaphore->Address<VAddr>(), 8,
+                                             u64(PM4ItOpcode::MemSemaphore));
                 if (mem_semaphore->IsSignaling()) {
                     if (rasterizer)
                         rasterizer->Census(UmaCensus::Kind::CpuWrite,
@@ -965,8 +989,12 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                                            u64(PM4ItOpcode::MemSemaphore));
                     mem_semaphore->Signal();
                 } else {
+                    // Another queue may write the semaphore on the GPU timeline meanwhile.
                     while (!mem_semaphore->Signaled()) {
                         YIELD_GFX();
+                        if (rasterizer)
+                            rasterizer->SyncCpAccess(mem_semaphore->Address<VAddr>(), 8,
+                                                     u64(PM4ItOpcode::MemSemaphore));
                     }
                     if (rasterizer)
                         rasterizer->Census(UmaCensus::Kind::CpuWrite,
@@ -987,6 +1015,8 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 const PM4CmdRewind* rewind = reinterpret_cast<const PM4CmdRewind*>(header);
                 while (!rewind->Valid()) {
                     YIELD_GFX();
+                    rasterizer->SyncCpAccess(reinterpret_cast<VAddr>(rewind), sizeof(*rewind),
+                                             u64(PM4ItOpcode::Rewind));
                 }
                 break;
             }
@@ -998,6 +1028,10 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 // there are no other submits to yield to we can sleep the thread
                 // instead and allow other tasks to run.
                 const u64* wait_addr = wait_reg_mem->Address<u64*>();
+                if (rasterizer &&
+                    wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory)
+                    rasterizer->SyncCpAccess(reinterpret_cast<VAddr>(wait_addr), 4,
+                                             u64(PM4ItOpcode::WaitRegMem));
                 if (vo_port->IsVoLabel(wait_addr) &&
                     num_submits == mapped_queues[GfxQueueId].submits.size()) {
                     VideoCore::Sync::WaitWithProgress(
@@ -1012,11 +1046,19 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                         rasterizer->FlushForMemoryWait();
                     }
                     YIELD_GFX();
+                    if (rasterizer &&
+                        wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory)
+                        rasterizer->SyncCpAccess(reinterpret_cast<VAddr>(wait_addr), 4,
+                                                 u64(PM4ItOpcode::WaitRegMem));
                 }
                 break;
             }
             case PM4ItOpcode::IndirectBuffer: {
                 const auto* indirect_buffer = reinterpret_cast<const PM4CmdIndirectBuffer*>(header);
+                if (rasterizer)
+                    rasterizer->SyncCpAccess(
+                        reinterpret_cast<VAddr>(indirect_buffer->Address<u32>()),
+                        u64(indirect_buffer->ib_size) * 4, u64(PM4ItOpcode::IndirectBuffer));
                 auto task = ProcessGraphics(
                     {indirect_buffer->Address<const u32>(), indirect_buffer->ib_size}, {});
                 RESUME_GFX(task);
@@ -1059,6 +1101,9 @@ Liverpool::Task Liverpool::ProcessGraphics(std::span<const u32> dcb, std::span<c
                 if (cond_exec->command.Value() != 0) {
                     LOG_WARNING(Render, "IT_COND_EXEC used a reserved command");
                 }
+                if (rasterizer)
+                    rasterizer->SyncCpAccess(reinterpret_cast<VAddr>(cond_exec->Address()), 4,
+                                             u64(PM4ItOpcode::CondExec));
                 const auto skip = *cond_exec->Address() == false;
                 if (skip) {
                     dcb = NextPacket(dcb,
@@ -1151,6 +1196,10 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
         case PM4ItOpcode::IndirectBuffer: {
             const auto* indirect_buffer = reinterpret_cast<const PM4CmdIndirectBuffer*>(header);
+            if (rasterizer)
+                rasterizer->SyncCpAccess(reinterpret_cast<VAddr>(indirect_buffer->Address<u32>()),
+                                         u64(indirect_buffer->ib_size) * 4,
+                                         u64(PM4ItOpcode::IndirectBuffer));
             auto task = ProcessCompute<true>(
                 {indirect_buffer->Address<const u32>(), indirect_buffer->ib_size}, vqid);
             RESUME_ASC(task, vqid);
@@ -1217,6 +1266,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             const PM4CmdRewind* rewind = reinterpret_cast<const PM4CmdRewind*>(header);
             while (!rewind->Valid()) {
                 YIELD_ASC(vqid);
+                if (rasterizer)
+                    rasterizer->SyncCpAccess(reinterpret_cast<VAddr>(rewind), sizeof(*rewind),
+                                             u64(PM4ItOpcode::Rewind));
             }
             break;
         }
@@ -1294,11 +1346,11 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             if (!write_data->wr_one_addr.Value()) {
                 if (rasterizer) {
                     rasterizer->OnFence();
+                    rasterizer->CpWriteData(write_data->Address<VAddr>(), write_data->data,
+                                            data_size, u64(PM4ItOpcode::WriteData));
+                } else {
+                    std::memcpy(write_data->Address<void*>(), write_data->data, data_size);
                 }
-                if (rasterizer)
-                    rasterizer->Census(UmaCensus::Kind::CpuWrite, write_data->Address<VAddr>(),
-                                       data_size, u64(PM4ItOpcode::WriteData));
-                std::memcpy(write_data->Address<void*>(), write_data->data, data_size);
             } else {
                 UNREACHABLE();
             }
@@ -1306,14 +1358,21 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         }
         case PM4ItOpcode::MemSemaphore: {
             const auto* mem_semaphore = reinterpret_cast<const PM4CmdMemSemaphore*>(header);
+            if (rasterizer)
+                rasterizer->SyncCpAccess(mem_semaphore->Address<VAddr>(), 8,
+                                         u64(PM4ItOpcode::MemSemaphore));
             if (mem_semaphore->IsSignaling()) {
                 if (rasterizer)
                     rasterizer->Census(UmaCensus::Kind::CpuWrite, mem_semaphore->Address<VAddr>(),
                                        8, u64(PM4ItOpcode::MemSemaphore));
                 mem_semaphore->Signal();
             } else {
+                // Another queue may write the semaphore on the GPU timeline meanwhile.
                 while (!mem_semaphore->Signaled()) {
                     YIELD_ASC(vqid);
+                    if (rasterizer)
+                        rasterizer->SyncCpAccess(mem_semaphore->Address<VAddr>(), 8,
+                                                 u64(PM4ItOpcode::MemSemaphore));
                 }
                 if (rasterizer)
                     rasterizer->Census(UmaCensus::Kind::CpuWrite, mem_semaphore->Address<VAddr>(),
@@ -1325,11 +1384,18 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
         case PM4ItOpcode::WaitRegMem: {
             const auto* wait_reg_mem = reinterpret_cast<const PM4CmdWaitRegMem*>(header);
             ASSERT(wait_reg_mem->engine.Value() == PM4CmdWaitRegMem::Engine::Me);
+            if (rasterizer && wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory)
+                rasterizer->SyncCpAccess(wait_reg_mem->Address<VAddr>(), 4,
+                                         u64(PM4ItOpcode::WaitRegMem));
             while (!wait_reg_mem->Test(regs.reg_array)) {
                 if (rasterizer) {
                     rasterizer->FlushForMemoryWait();
                 }
                 YIELD_ASC(vqid);
+                if (rasterizer &&
+                    wait_reg_mem->mem_space.Value() == PM4CmdWaitRegMem::MemSpace::Memory)
+                    rasterizer->SyncCpAccess(wait_reg_mem->Address<VAddr>(), 4,
+                                             u64(PM4ItOpcode::WaitRegMem));
             }
             break;
         }

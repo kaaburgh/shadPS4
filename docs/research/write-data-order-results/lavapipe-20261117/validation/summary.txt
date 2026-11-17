@@ -1,0 +1,16 @@
+c364436 write_data_order mirror-precise #1 status=PASS vuid=1 sync=2 valerr=3 layer=1
+c364436 write_data_order mirror-precise #2 status=PASS vuid=1 sync=2 valerr=3 layer=1
+c364436 write_data_order shared-precise #1 status=FAIL reason=a_saw_later_write vuid=1 sync=3 valerr=4 layer=1
+c364436 write_data_order shared-precise #2 status=FAIL reason=a_saw_later_write vuid=1 sync=3 valerr=4 layer=1
+c364436 write_data_interleave mirror-precise #1 status=PASS vuid=1 sync=1 valerr=2 layer=1
+c364436 write_data_interleave mirror-precise #2 status=PASS vuid=1 sync=1 valerr=2 layer=1
+c364436 write_data_interleave shared-precise #1 status=FAIL reason=saw_later_write vuid=1 sync=10 valerr=11 layer=1
+c364436 write_data_interleave shared-precise #2 status=FAIL reason=saw_later_write vuid=1 sync=10 valerr=11 layer=1
+5e41afe write_data_order mirror-precise #1 status=PASS vuid=1 sync=2 valerr=3 layer=1
+5e41afe write_data_order mirror-precise #2 status=PASS vuid=1 sync=2 valerr=3 layer=1
+5e41afe write_data_order shared-precise #1 status=PASS vuid=1 sync=2 valerr=3 layer=1
+5e41afe write_data_order shared-precise #2 status=PASS vuid=1 sync=2 valerr=3 layer=1
+5e41afe write_data_interleave mirror-precise #1 status=PASS vuid=1 sync=1 valerr=2 layer=1
+5e41afe write_data_interleave mirror-precise #2 status=PASS vuid=1 sync=1 valerr=2 layer=1
+5e41afe write_data_interleave shared-precise #1 status=PASS vuid=1 sync=2 valerr=3 layer=1
+5e41afe write_data_interleave shared-precise #2 status=PASS vuid=1 sync=2 valerr=3 layer=1

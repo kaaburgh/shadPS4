@@ -55,6 +55,12 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
 
 Rasterizer::~Rasterizer() {
     liverpool->Stop();
+    if (buffer_cache.IsSharedBackingEnabled()) {
+        LOG_INFO(Render_Vulkan,
+                 "UMA shared backing CP writes: on_gpu_timeline={}, waited_fallback={}, "
+                 "cp_access_waits={}",
+                 cp_writes_on_gpu, cp_writes_waited, cp_access_waits);
+    }
 }
 
 bool Rasterizer::FilterDraw() {
@@ -1241,6 +1247,114 @@ void Rasterizer::CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, b
         .size = num_bytes,
     };
     runtime.CopyBuffer(src_buffer, dst_buffer, std::span{&copy, 1});
+}
+
+void Rasterizer::CpWriteData(VAddr address, const void* data, u32 num_bytes, u64 opcode) {
+    const auto* src = static_cast<const u8*>(data);
+    const auto write_now = [&](VAddr dst, u32 offset, u32 bytes) {
+        scheduler.Census(UmaCensus::Kind::CpuWrite, dst, bytes, opcode);
+        std::memcpy(std::bit_cast<void*>(dst), src + offset, bytes);
+    };
+    if (!buffer_cache.IsSharedBackingEnabled() || num_bytes == 0) {
+        write_now(address, 0, num_bytes);
+        return;
+    }
+    // Issue #11: work recorded before this packet reads and writes shared memory only when it
+    // executes, after the next submit. A parse-time write would overtake it, so the write goes
+    // on the GPU timeline. Shared state is per block, so the write is split at block bounds.
+    Scheduler::CensusCommandScope census_command{scheduler, 7};
+    const u64 block_size = buffer_cache.GetBlockSize();
+    for (u32 offset = 0; offset < num_bytes;) {
+        const VAddr piece = address + offset;
+        const u32 bytes =
+            static_cast<u32>(std::min<u64>(num_bytes - offset, block_size - piece % block_size));
+        std::optional<std::pair<const VideoCore::Buffer*, u64>> shared;
+        if (piece % 4 == 0 && bytes % 4 == 0) {
+            shared = buffer_cache.ObtainSharedBufferForCpWrite(piece, bytes);
+        }
+        if (shared) {
+            texture_cache.InvalidateMemoryFromGPU(piece, bytes);
+            runtime.UpdateBuffer(shared->first, shared->second, {src + offset, bytes});
+            if (const auto physical = memory->GetContiguousBacking(piece, bytes)) {
+                if (pending_cp_writes.size() >= 256) {
+                    std::erase_if(pending_cp_writes, [this](const PendingCpWrite& write) {
+                        return scheduler.IsFree(write.tick);
+                    });
+                }
+                pending_cp_writes.push_back(
+                    {*physical, *physical + bytes, scheduler.CurrentTick()});
+            }
+            if (++cp_writes_on_gpu == 1) {
+                LOG_INFO(Render_Vulkan,
+                         "UMA shared backing: first CP write on the GPU timeline at {:#x} size={}",
+                         piece, bytes);
+            }
+        } else {
+            if (buffer_cache.IsRegionShared(piece, bytes)) {
+                // Recorded work uses this block through the shared backing, but the write
+                // cannot go on the GPU timeline (vkCmdUpdateBuffer needs 4-byte alignment).
+                // Write it once that work is done. This is the CP thread between two packets,
+                // not a recording context.
+                if (++cp_writes_waited == 1) {
+                    LOG_WARNING(Render_Vulkan,
+                                "UMA shared backing: CP write at {:#x} size={} waits for the GPU",
+                                piece, bytes);
+                }
+                scheduler.Finish(9);
+                pending_cp_writes.clear();
+            } else {
+                // Keeps the order with a pending write to the same memory through another VA.
+                SyncCpAccess(piece, bytes, opcode);
+            }
+            write_now(piece, offset, bytes);
+        }
+        offset += bytes;
+    }
+}
+
+void Rasterizer::SyncCpAccess(VAddr address, u64 size, u64 opcode) {
+    if (pending_cp_writes.empty() || size == 0) {
+        return;
+    }
+    std::erase_if(pending_cp_writes,
+                  [this](const PendingCpWrite& write) { return scheduler.IsFree(write.tick); });
+    // Guest memory is mapped with 16 KiB pages; a range can cover noncontiguous ones, and
+    // another guest VA can alias a pending write, so compare physical ranges.
+    constexpr u64 backing_page_size = 16_KB;
+    for (VAddr page = address; size > page - address;) {
+        const u64 bytes =
+            std::min(size - (page - address), backing_page_size - page % backing_page_size);
+        if (const auto physical = memory->GetContiguousBacking(page, bytes)) {
+            const PAddr start = *physical;
+            const PAddr end = start + bytes;
+            const bool overlaps = std::ranges::any_of(pending_cp_writes, [&](const auto& write) {
+                return write.start < end && start < write.end;
+            });
+            if (overlaps) {
+                if (++cp_access_waits == 1) {
+                    LOG_INFO(Render_Vulkan,
+                             "UMA shared backing: CP packet {:#x} at {:#x} waits for a CP write "
+                             "on the GPU timeline",
+                             opcode, address);
+                }
+                scheduler.Finish(8);
+                pending_cp_writes.clear();
+                return;
+            }
+        }
+        page += bytes;
+    }
+}
+
+void Rasterizer::FlushPendingCpWrites() {
+    if (pending_cp_writes.empty()) {
+        return;
+    }
+    const u64 current = scheduler.CurrentTick();
+    if (std::ranges::any_of(pending_cp_writes,
+                            [current](const auto& write) { return write.tick >= current; })) {
+        scheduler.Flush();
+    }
 }
 
 u32 Rasterizer::ReadDataFromGds(u32 gds_offset) {

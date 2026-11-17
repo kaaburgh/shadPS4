@@ -1,0 +1,8 @@
+ablate=flush write_data_interleave guest: status=FAIL reason=saw_later_write case=interleave oracle: "verdict":"FAIL"
+ablate=flush write_data_order guest: status=FAIL reason=a_saw_later_write case=large_a oracle: "verdict":"FAIL"
+ablate=finish write_data_interleave guest: status=PASS oracle: "verdict":"FAIL"
+ablate=finish write_data_order guest: status=PASS oracle: "verdict":"FAIL"
+ablate=nosync write_data_interleave guest: status=FAIL oracle: "verdict":"PASS"
+ablate=nosync write_data_order guest: status=PASS oracle: "verdict":"PASS"
+ablate=noflush write_data_interleave guest: status=FAIL reason=label_not_seen case=label_no_eop oracle: "verdict":"PASS"
+ablate=noflush write_data_order guest: status=PASS oracle: "verdict":"PASS"

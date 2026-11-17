@@ -41,6 +41,12 @@ public:
 
     void InlineData(VideoCore::Buffer* dst, u64 offset, u32 value);
 
+    /// Writes data on the GPU timeline, ordered after all previously recorded commands and
+    /// before all later ones, including those that reach dst through a device address and
+    /// therefore have no tracked range. offset and data size must be multiples of 4, the size
+    /// at most 65536 bytes (vkCmdUpdateBuffer).
+    void UpdateBuffer(const VideoCore::Buffer* dst, u64 offset, std::span<const u8> data);
+
     bool Transit(VideoCore::Image* image, vk::ImageLayout dst_layout,
                  vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access,
                  std::optional<VideoCore::SubresourceRange> subres_range = {});

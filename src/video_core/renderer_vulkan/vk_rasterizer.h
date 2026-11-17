@@ -72,6 +72,21 @@ public:
     void FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds);
     void CopyBuffer(VAddr dst, VAddr src, u32 num_bytes, bool dst_gds, bool src_gds);
     u32 ReadDataFromGds(u32 gsd_offset);
+
+    /// Performs a CP memory write (WRITE_DATA). Without shared backing, and for memory that no
+    /// recorded work can access through it, the write lands in guest memory now, as before.
+    /// Memory in the shared backing is written on the GPU timeline instead, after the work
+    /// recorded before the packet and before the work recorded after it.
+    void CpWriteData(VAddr address, const void* data, u32 num_bytes, u64 opcode);
+
+    /// Called before the CP accesses guest memory at parse time. Waits for the recorded work
+    /// only when the range overlaps a CP write that is still pending on the GPU timeline.
+    void SyncCpAccess(VAddr address, u64 size, u64 opcode);
+
+    /// Submits CP writes that are recorded but not submitted yet, so that waiters outside the
+    /// GPU timeline (the guest CPU, another queue) eventually see them. Called when the CP goes
+    /// idle or yields in a wait.
+    void FlushPendingCpWrites();
     bool InvalidateMemory(VAddr addr, u64 size, bool assume_locks = false);
     bool ReadMemory(VAddr addr, u64 size, bool assume_locks = false);
     bool IsMapped(VAddr addr, u64 size);
@@ -180,6 +195,18 @@ private:
 
     bool attachment_feedback_loop{};
     bool needs_barrier{};
+
+    /// CP writes recorded on the GPU timeline and not known to be complete: physical range
+    /// and the scheduler tick that executes them.
+    struct PendingCpWrite {
+        PAddr start;
+        PAddr end;
+        u64 tick;
+    };
+    std::vector<PendingCpWrite> pending_cp_writes;
+    u64 cp_writes_on_gpu{};
+    u64 cp_writes_waited{};
+    u64 cp_access_waits{};
 };
 
 } // namespace Vulkan

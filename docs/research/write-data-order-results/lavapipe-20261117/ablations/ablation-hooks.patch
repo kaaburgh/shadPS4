@@ -1,0 +1,42 @@
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+index aac5e8b..be714d5 100644
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -1262,6 +1262,17 @@ void Rasterizer::CpWriteData(VAddr address, const void* data, u32 num_bytes, u64
+     // Issue #11: work recorded before this packet reads and writes shared memory only when it
+     // executes, after the next submit. A parse-time write would overtake it, so the write goes
+     // on the GPU timeline. Shared state is per block, so the write is split at block bounds.
++    static const char* ablate = std::getenv("WD_ABLATE");
++    if (ablate && std::string_view{ablate} == "flush") {
++        scheduler.Flush();
++        write_now(address, 0, num_bytes);
++        return;
++    }
++    if (ablate && std::string_view{ablate} == "finish") {
++        scheduler.Finish(1);
++        write_now(address, 0, num_bytes);
++        return;
++    }
+     Scheduler::CensusCommandScope census_command{scheduler, 7};
+     const u64 block_size = buffer_cache.GetBlockSize();
+     for (u32 offset = 0; offset < num_bytes;) {
+@@ -1313,6 +1324,9 @@ void Rasterizer::CpWriteData(VAddr address, const void* data, u32 num_bytes, u64
+ }
+ 
+ void Rasterizer::SyncCpAccess(VAddr address, u64 size, u64 opcode) {
++    if (const char* a = std::getenv("WD_ABLATE"); a && std::string_view{a} == "nosync") {
++        return;
++    }
+     if (pending_cp_writes.empty() || size == 0) {
+         return;
+     }
+@@ -1347,6 +1361,9 @@ void Rasterizer::SyncCpAccess(VAddr address, u64 size, u64 opcode) {
+ }
+ 
+ void Rasterizer::FlushPendingCpWrites() {
++    if (const char* a = std::getenv("WD_ABLATE"); a && std::string_view{a} == "noflush") {
++        return;
++    }
+     if (pending_cp_writes.empty()) {
+         return;
+     }
