@@ -6,8 +6,8 @@ SPDX-License-Identifier: GPL-2.0-or-later
 # UMA E1C: WRITE_DATA ordering with shared backing
 
 Write side of kaaburgh/shadPS4#11 for `WRITE_DATA`. Base: PR #54 at `c364436`. Fix: `8971952`;
-oracle tool: `5e41afe`. Status: verified on lavapipe; **RADV (M75n, dma-buf backend) runs are
-pending** and are not claimed here.
+oracle tool: `5e41afe`. Verified on lavapipe (host-pointer backend) and on RADV (M75n, dma-buf
+backend), 2026-11-17.
 
 ## Cause
 
@@ -104,6 +104,47 @@ the BDA page table buffer (`vkCmdFillBuffer` at init, then `vkCmdCopyBuffer` of
 `write_data_interleave`) because its barriers also order those copies; the hazard itself is
 outside this change.
 
+## Results on RADV (M75n, 2026-11-17)
+
+Ryzen 3 3300U, Radeon Vega 6 (RADV RAVEN), Mesa 25.0.7, Debian 13 kernel 6.12, validation layers
+1.4.309, headless weston. Both binaries built on the machine with the configuration of the earlier
+PR #54 RADV builds (Release with `-O0` C++, clang-19, lld): baseline `c364436` sha256
+`d22d29489c124d46…`, fix `2366205` (sources as `5e41afe`) sha256 `c87a180a2a9b759b…`. Every
+shared-configuration log shows `backend=dma-buf`. Raw logs, commands, build logs and the README
+with all hashes: `write-data-order-results/radv-m75n-20261117/`.
+
+| Test | Config | c364436 | fix |
+|---|---|---|---|
+| write_data_order | mirror Precise | PASS 5/5 | PASS 5/5 |
+| write_data_order | shared Precise | FAIL 5/5 `a_saw_later_write` (large_a, small_a) | PASS 5/5 |
+| write_data_order | shared Disabled | FAIL 5/5 `a_saw_later_write` | PASS 5/5 |
+| write_data_interleave | mirror Precise | PASS 5/5 | PASS 5/5 |
+| write_data_interleave | shared Precise | FAIL 5/5 `saw_later_write` (interleave, gpu_then_cp) | PASS 5/5 |
+| write_data_interleave | shared Disabled | FAIL 5/5 `saw_later_write` | PASS 5/5 |
+
+An earlier PR #54 build of `c364436` gave the same baseline failure 3/3 (`baseline-c364436/step2/`).
+
+**Neighbours**, once per configuration, 11 tests (`cond_exec_gpu_predicate`, `dma_order`,
+`dma_alias_order`, `physical_alias`, `fallback_in_shared`, `map_unmap_reuse`,
+`buffer_compute_roundtrip`, `buffer_pingpong`, `pm4_controls`, `ordered_async_handoff`,
+`uma_churn`): the fix equals the baseline in all 33 runs. Known failures in both:
+`cond_exec_gpu_predicate` shared, `dma_alias_order` (all mirror cases, non-contiguous shared
+cases), `physical_alias` mirror, `fallback_in_shared` shared Disabled.
+
+The fix's log line "first CP write on the GPU timeline" appears in every shared run of the two
+`WRITE_DATA` tests and of `dma_order`, and never in mirror or baseline logs. "waits for the GPU"
+appears in no log.
+
+**Validation** (core plus synchronization; the layer printed that synchronization validation
+was enabled, and the canary's planted VUID was reported): both tests, mirror and shared Precise,
+2 runs each, both binaries. Every log has the same messages: only
+`VUID-VkPipelineShaderStageCreateInfo-pNext-02755` (compute pipelines with a required subgroup
+size on a stage not in `requiredSubgroupSizeStages`), no `SYNC-HAZARD`. No message differs
+between baseline and fix. Synchronization validation tracks hazards per Vulkan object, so a
+write through the chunk buffer and a read through another buffer over the same imported
+memory would not be reported; the zero count is weak evidence on its own. The ordering evidence
+is the guest tests and the ablations.
+
 ## Is the PASS real? Ablations and the host oracle
 
 A guest test cannot tell an ordered write from one that waited for the GPU. The ablation binary
@@ -142,12 +183,16 @@ that takes the misaligned-write wait.
 - Images: the write marks images at the same base address `GpuDirty`; an image that starts
   elsewhere and covers the range is not invalidated (same rule as `CopyBuffer`).
 - Each GPU-timeline `WRITE_DATA` costs two full memory barriers. Not measured on a title.
+- The ablations and the E0 oracle ran on lavapipe only; on RADV the evidence is the guest tests
+  and the absence of the wait line.
 - A wait for a pending CP write (`SyncCpAccess`) is a `Finish` of all recorded work, not of the
   write's tick only.
 - The completion of EOP/`RELEASE_MEM` labels is published after the GPU timeline, so it stays
   ordered after the write; unchanged.
 
 ## Artifacts
+
+`write-data-order-results/radv-m75n-20261117/`: see its `README.txt`.
 
 `write-data-order-results/lavapipe-20261117/`: `baseline-c364436/`, `fix-repeats/` (5 runs per
 configuration, `summary.txt`), `final-5e41afe/`, `ablations/` (run logs, oracle JSON, capture
