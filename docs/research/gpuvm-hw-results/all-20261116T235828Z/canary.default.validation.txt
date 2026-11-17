@@ -1,0 +1,27 @@
+device: AMD Radeon Vega 6 Graphics (RADV RAVEN), driver: radv Mesa 25.0.7-2+deb13u1, api 1.4.305
+sparseAddressSpaceSize=0xfffffffc maxMemoryAllocationCount=4294967295
+residencyNonResidentStrict=1 minImportedHostPointerAlignment=0x1000
+memtype  0 heap 1: DEVICE_LOCAL
+memtype  1 heap 1: DEVICE_LOCAL
+memtype  2 heap 0: HOST_VISIBLE COHERENT
+memtype  3 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype  4 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype  5 heap 0: HOST_VISIBLE COHERENT CACHED
+memtype  6 heap 0: HOST_VISIBLE COHERENT CACHED
+memtype  7 heap 1: DEVICE_LOCAL
+memtype  8 heap 0: HOST_VISIBLE COHERENT
+memtype  9 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype 10 heap 0: HOST_VISIBLE COHERENT CACHED
+queue families: work=0 sparse=2
+extensions: external_memory_host=1 external_memory_fd=1 dma_buf=1
+features: sparseBinding=1 sparseResidencyBuffer=1 sparseResidencyAliased=1
+Q   host-pointer plain buffer: importable 
+Q   host-pointer sparse buffer: importable 
+Q   dma-buf      plain buffer: importable exportable 
+Q   dma-buf      sparse buffer: importable exportable 
+Validation Error: [ VUID-VkBufferCreateInfo-None-09500 ] | MessageID = 0xf6d454db
+vkCreateBuffer(): pCreateInfo->usage is zero.
+The Vulkan spec states: If the pNext chain does not include a VkBufferUsageFlags2CreateInfo structure, usage must not be 0 (https://docs.vulkan.org/spec/latest/chapters/resources.html#VUID-VkBufferCreateInfo-None-09500)
+
+V1  INFO vkCreateBuffer with usage 0 -> 0: the layer must report it
+V2  SKIP reported granularity 4 KiB, forced by the RADV option: no; a misaligned bind is only made where the driver is known to accept it

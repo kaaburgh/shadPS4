@@ -1,0 +1,56 @@
+ATTENTION: default value of option radv_force_64k_sparse_alignment overridden by environment.
+device: AMD Radeon Vega 6 Graphics (RADV RAVEN), driver: radv Mesa 25.0.7-2+deb13u1, api 1.4.305
+sparseAddressSpaceSize=0xfffffffc maxMemoryAllocationCount=4294967295
+residencyNonResidentStrict=1 minImportedHostPointerAlignment=0x1000
+memtype  0 heap 1: DEVICE_LOCAL
+memtype  1 heap 1: DEVICE_LOCAL
+memtype  2 heap 0: HOST_VISIBLE COHERENT
+memtype  3 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype  4 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype  5 heap 0: HOST_VISIBLE COHERENT CACHED
+memtype  6 heap 0: HOST_VISIBLE COHERENT CACHED
+memtype  7 heap 1: DEVICE_LOCAL
+memtype  8 heap 0: HOST_VISIBLE COHERENT
+memtype  9 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype 10 heap 0: HOST_VISIBLE COHERENT CACHED
+queue families: work=0 sparse=2
+extensions: external_memory_host=1 external_memory_fd=1 dma_buf=1
+features: sparseBinding=1 sparseResidencyBuffer=1 sparseResidencyAliased=1
+Q   host-pointer plain buffer: importable 
+Q   host-pointer sparse buffer: importable 
+Q   dma-buf      plain buffer: importable exportable 
+Q   dma-buf      sparse buffer: importable exportable 
+Validation Error: [ VUID-VkBufferCreateInfo-None-09500 ] | MessageID = 0xf6d454db
+vkCreateBuffer(): pCreateInfo->usage is zero.
+The Vulkan spec states: If the pNext chain does not include a VkBufferUsageFlags2CreateInfo structure, usage must not be 0 (https://docs.vulkan.org/spec/latest/chapters/resources.html#VUID-VkBufferCreateInfo-None-09500)
+
+V1  INFO vkCreateBuffer with usage 0 -> 0: the layer must report it
+Validation Error: [ VUID-VkSparseMemoryBind-resourceOffset-09491 ] | MessageID = 0xc4187293
+vkQueueBindSparse(): pBindInfo[0].pBufferBinds[0].buffer (VkBuffer 0x30000000003) is being bound, but pBindInfo[0].pBufferBinds[0].pBinds[0].resourceOffset (16384) is not a multiple of required memory alignment (65536).
+The Vulkan spec states: If the resource being bound is a VkBuffer, resourceOffset, memoryOffset and size must be an integer multiple of the alignment of the VkMemoryRequirements structure returned from a call to vkGetBufferMemoryRequirements with the buffer resource (https://docs.vulkan.org/spec/latest/chapters/sparsemem.html#VUID-VkSparseMemoryBind-resourceOffset-09491)
+Objects: 2
+    [0] VkDeviceMemory 0x40000000004
+    [1] VkBuffer 0x30000000003
+
+Validation Error: [ VUID-VkSparseMemoryBind-resourceOffset-09491 ] | MessageID = 0xc4187293
+vkQueueBindSparse(): pBindInfo[0].pBufferBinds[0].buffer (VkBuffer 0x30000000003) is being bound, but pBindInfo[0].pBufferBinds[0].pBinds[0].memoryOffset (16384) is not a multiple of required memory alignment (65536).
+The Vulkan spec states: If the resource being bound is a VkBuffer, resourceOffset, memoryOffset and size must be an integer multiple of the alignment of the VkMemoryRequirements structure returned from a call to vkGetBufferMemoryRequirements with the buffer resource (https://docs.vulkan.org/spec/latest/chapters/sparsemem.html#VUID-VkSparseMemoryBind-resourceOffset-09491)
+Objects: 2
+    [0] VkDeviceMemory 0x40000000004
+    [1] VkBuffer 0x30000000003
+
+Validation Error: [ VUID-VkSparseMemoryBind-resourceOffset-09491 ] | MessageID = 0xc4187293
+vkQueueBindSparse(): pBindInfo[0].pBufferBinds[0].buffer (VkBuffer 0x30000000003) is being bound, but pBindInfo[0].pBufferBinds[0].pBinds[0].size (16384) is not a multiple of required memory alignment (65536).
+The Vulkan spec states: If the resource being bound is a VkBuffer, resourceOffset, memoryOffset and size must be an integer multiple of the alignment of the VkMemoryRequirements structure returned from a call to vkGetBufferMemoryRequirements with the buffer resource (https://docs.vulkan.org/spec/latest/chapters/sparsemem.html#VUID-VkSparseMemoryBind-resourceOffset-09491)
+Objects: 2
+    [0] VkDeviceMemory 0x40000000004
+    [1] VkBuffer 0x30000000003
+
+Validation Error: [ VUID-VkSparseMemoryBind-memory-01096 ] | MessageID = 0xc33a29b8
+vkQueueBindSparse(): pBindInfo[0].pBufferBinds[0].pBinds[0].memoryOffset (16384) is not a multiple of required memory alignment (65536).
+The Vulkan spec states: If memory is not VK_NULL_HANDLE, memory and memoryOffset must match the memory requirements of the resource, as described in section Resource Memory Association (https://docs.vulkan.org/spec/latest/chapters/sparsemem.html#VUID-VkSparseMemoryBind-memory-01096)
+Objects: 2
+    [0] VkDeviceMemory 0x40000000004
+    [1] VkBuffer 0x30000000003
+
+V2  INFO bind of 16 KiB at offset 16 KiB with a reported granularity of 64 KiB -> 0: the layer must report it

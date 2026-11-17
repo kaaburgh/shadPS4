@@ -129,8 +129,11 @@ The Gate B harness (`build-e3.sh`, `run-e3-matrix.sh`) and P1-A harness
 - **Run:** to be written with the probe mode. Also on M75n with dma-buf.
 - **Expected:** import accepted or refused; bytes consistent in both directions; whether
   `minImportedHostPointerAlignment` permits a 16 KiB shift.
-- **Status:** blocked on the probe mode, and only worth running if NV-5 passes
-- **Result:** —
+- **Status:** blocked on the probe mode, and only worth running if NV-5 passes. The dma-buf
+  mode exists (`--backend shifted-dmabuf`, tests T1 to T6) and passes on the M75n; a
+  host-pointer variant for NVIDIA is not written.
+- **Result:** M75n, RADV, Mesa 25.0.7: pass at 4 KiB and at a forced 64 KiB granularity, see
+  [the hardware experiments][r-hw]. NVIDIA: —
 
 ### NV-8: host-pointer import of a guest VA range
 
@@ -145,7 +148,9 @@ The Gate B harness (`build-e3.sh`, `run-e3-matrix.sh`) and P1-A harness
 - **Run:** to be written with the probe mode.
 - **Expected:** import accepted or refused; GPU sees the permuted pages; after the remap,
   whether the import still points at the old page (expected, since imports pin pages).
-- **Status:** blocked on the probe mode, and only worth running if NV-5 passes
+- **Status:** blocked on the probe mode, and only worth running if NV-5 passes. The udmabuf
+  counterpart (`--backend stitched-dmabuf`, tests U1 to U7) passes on the M75n, see
+  [the hardware experiments][r-hw]; it does not answer the host-pointer question.
 - **Result:** —
 
 ## Done
@@ -157,3 +162,4 @@ None yet.
 [r-arch]: https://github.com/kaaburgh/shadPS4/pull/54
 [r-gran]: https://github.com/kaaburgh/shadPS4/pull/57
 [r-dedicated]: https://github.com/kaaburgh/shadPS4/pull/54#discussion_r4578387976
+[r-hw]: uma-gpuvm-hw-experiments.md

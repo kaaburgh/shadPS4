@@ -1,0 +1,415 @@
+== canary (default, validation): passed; exit 0, layer reported the planted errors: V1 yes, V2 skipped
+   reported: VUID-VkBufferCreateInfo-None-09500 
+   V1  INFO vkCreateBuffer with usage 0 -> 0: the layer must report it
+   V2  SKIP reported granularity 4 KiB, forced by the RADV option: no; a misaligned bind is only made where the driver is known to accept it
+== canary (force64k, validation): passed; exit 0, layer reported the planted errors: V1 yes, V2 yes
+   reported: VUID-VkBufferCreateInfo-None-09500 VUID-VkSparseMemoryBind-memory-01096 VUID-VkSparseMemoryBind-resourceOffset-09491 
+   V1  INFO vkCreateBuffer with usage 0 -> 0: the layer must report it
+   V2  INFO bind of 16 KiB at offset 16 KiB with a reported granularity of 64 KiB -> 0: the layer must report it
+== control (default, plain): passed; exit 0, PASS 4, FAIL 0, SKIP 1, validation messages 0
+   arguments: --backend control --bw-mib 0
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control sparse arena: block=4 KiB, blocks=4096, memoryTypeBits=0x7ad
+       bind: 4096 ops of 4 KiB in 372.525 ms (submit + idle)
+   S1  PASS control: GPU reads through a sparse VA arena bound to driver-allocated backing, 4096 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS control: GPU fill through VA block 1 visible at physical block 4094 (0 mismatches)
+       bind: 1 ops of 4 KiB in 0.233 ms (submit + idle)
+   S3  PASS control: remap VA block 0 phys 4095 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   S1  SKIP no import backend available
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== control (default, validation): passed; exit 0, PASS 4, FAIL 0, SKIP 1, validation messages 0
+   arguments: --backend control --bw-mib 0
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control sparse arena: block=4 KiB, blocks=4096, memoryTypeBits=0x7ad
+       bind: 4096 ops of 4 KiB in 1675.140 ms (submit + idle)
+   S1  PASS control: GPU reads through a sparse VA arena bound to driver-allocated backing, 4096 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS control: GPU fill through VA block 1 visible at physical block 4094 (0 mismatches)
+       bind: 1 ops of 4 KiB in 1.215 ms (submit + idle)
+   S3  PASS control: remap VA block 0 phys 4095 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   S1  SKIP no import backend available
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== control (force64k, plain): passed; exit 0, PASS 4, FAIL 0, SKIP 1, validation messages 0
+   arguments: --backend control --bw-mib 0
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control sparse arena: block=64 KiB, blocks=256, memoryTypeBits=0x7ad
+       bind: 256 ops of 64 KiB in 4.409 ms (submit + idle)
+   S1  PASS control: GPU reads through a sparse VA arena bound to driver-allocated backing, 256 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS control: GPU fill through VA block 1 visible at physical block 254 (0 mismatches)
+       bind: 1 ops of 64 KiB in 0.115 ms (submit + idle)
+   S3  PASS control: remap VA block 0 phys 255 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   S1  SKIP no import backend available
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== control (force64k, validation): passed; exit 0, PASS 4, FAIL 0, SKIP 1, validation messages 0
+   arguments: --backend control --bw-mib 0
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control sparse arena: block=64 KiB, blocks=256, memoryTypeBits=0x7ad
+       bind: 256 ops of 64 KiB in 11.264 ms (submit + idle)
+   S1  PASS control: GPU reads through a sparse VA arena bound to driver-allocated backing, 256 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS control: GPU fill through VA block 1 visible at physical block 254 (0 mismatches)
+       bind: 1 ops of 64 KiB in 0.193 ms (submit + idle)
+   S3  PASS control: remap VA block 0 phys 255 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   S1  SKIP no import backend available
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== dmabuf (default, plain): passed; exit 0, PASS 4, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend dmabuf --bw-mib 0
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf sparse arena: block=4 KiB, blocks=4096, memoryTypeBits=0x7ad
+       imported dma-buf backing: 16 MiB, memory type 5 (external bits 0x420)
+       bind: 4096 ops of 4 KiB in 374.134 ms (submit + idle)
+   S1  PASS dma-buf: GPU reads through a sparse VA arena bound to imported backing, 4096 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS dma-buf: GPU fill through VA block 1 visible at physical block 4094 (0 mismatches)
+       bind: 1 ops of 4 KiB in 0.340 ms (submit + idle)
+   S3  PASS dma-buf: remap VA block 0 phys 4095 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== dmabuf (default, validation): passed; exit 0, PASS 4, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend dmabuf --bw-mib 0
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf sparse arena: block=4 KiB, blocks=4096, memoryTypeBits=0x7ad
+       imported dma-buf backing: 16 MiB, memory type 5 (external bits 0x420)
+       bind: 4096 ops of 4 KiB in 1696.739 ms (submit + idle)
+   S1  PASS dma-buf: GPU reads through a sparse VA arena bound to imported backing, 4096 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS dma-buf: GPU fill through VA block 1 visible at physical block 4094 (0 mismatches)
+       bind: 1 ops of 4 KiB in 1.730 ms (submit + idle)
+   S3  PASS dma-buf: remap VA block 0 phys 4095 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== dmabuf (force64k, plain): passed; exit 0, PASS 4, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend dmabuf --bw-mib 0
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf sparse arena: block=64 KiB, blocks=256, memoryTypeBits=0x7ad
+       imported dma-buf backing: 16 MiB, memory type 5 (external bits 0x420)
+       bind: 256 ops of 64 KiB in 4.606 ms (submit + idle)
+   S1  PASS dma-buf: GPU reads through a sparse VA arena bound to imported backing, 256 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS dma-buf: GPU fill through VA block 1 visible at physical block 254 (0 mismatches)
+       bind: 1 ops of 64 KiB in 0.111 ms (submit + idle)
+   S3  PASS dma-buf: remap VA block 0 phys 255 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== dmabuf (force64k, validation): passed; exit 0, PASS 4, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend dmabuf --bw-mib 0
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf sparse arena: block=64 KiB, blocks=256, memoryTypeBits=0x7ad
+       imported dma-buf backing: 16 MiB, memory type 5 (external bits 0x420)
+       bind: 256 ops of 64 KiB in 11.043 ms (submit + idle)
+   S1  PASS dma-buf: GPU reads through a sparse VA arena bound to imported backing, 256 noncontiguous blocks + 1 alias (0 mismatches, first VA block -1)
+   S2  PASS dma-buf: GPU fill through VA block 1 visible at physical block 254 (0 mismatches)
+       bind: 1 ops of 64 KiB in 0.366 ms (submit + idle)
+   S3  PASS dma-buf: remap VA block 0 phys 255 -> 2 by rebind, GPU sees new bytes (0 mismatches)
+   E1  PASS driver-owned dma-buf backing (memory type 5, cached) mapped in 1024 permuted 16 KiB CPU pieces; CPU writes seen by GPU (0 mismatches)
+   summary: 4 passed, 0 failed
+== shifted-control (default, plain): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend shifted-control --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control arena: test block 64 KiB, driver bind granularity 4 KiB, 8 blocks
+       bind: 8 blocks in 0.201 ms; memory objects over store 0: 1; gtt_used +0 bytes for a store of 2097152 bytes
+   T1  PASS shifted control: GPU reads 4 views of the same pages at phases 0..48 KiB, a 2-block mapping at phase 16 KiB and both controls (0 mismatches; no mismatch)
+   T2  PASS shifted control: GPU fill of guest page 19 through each of 4 phases, read back through all views and by the CPU, separate submissions (0 mismatches; no mismatch)
+   T3  PASS shifted control: negative control, a private copy of the same bytes shows none of the writes (4096 of 4096 written words differ from an alias)
+   T4  PASS shifted control: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+   T5  PASS shifted control: CPU writes seen by the GPU through all views (0 mismatches; no mismatch)
+   T6  PASS shifted control: GPU fill across a block boundary of the phase-16 KiB mapping lands on neighbouring guest pages 36 and 37 (0 mismatches; no mismatch)
+   summary: 6 passed, 0 failed
+== shifted-control (default, validation): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend shifted-control --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control arena: test block 64 KiB, driver bind granularity 4 KiB, 8 blocks
+       bind: 8 blocks in 0.509 ms; memory objects over store 0: 1; gtt_used +0 bytes for a store of 2097152 bytes
+   T1  PASS shifted control: GPU reads 4 views of the same pages at phases 0..48 KiB, a 2-block mapping at phase 16 KiB and both controls (0 mismatches; no mismatch)
+   T2  PASS shifted control: GPU fill of guest page 19 through each of 4 phases, read back through all views and by the CPU, separate submissions (0 mismatches; no mismatch)
+   T3  PASS shifted control: negative control, a private copy of the same bytes shows none of the writes (4096 of 4096 written words differ from an alias)
+   T4  PASS shifted control: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+   T5  PASS shifted control: CPU writes seen by the GPU through all views (0 mismatches; no mismatch)
+   T6  PASS shifted control: GPU fill across a block boundary of the phase-16 KiB mapping lands on neighbouring guest pages 36 and 37 (0 mismatches; no mismatch)
+   summary: 6 passed, 0 failed
+== shifted-control (force64k, plain): skipped; exit 0, PASS 0, FAIL 0, SKIP 1, validation messages 0
+   arguments: --backend shifted-control --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control arena: test block 64 KiB, driver bind granularity 64 KiB, 8 blocks
+   T1  SKIP shifted control: the driver binds in units of 64 KiB, so one memory object cannot express 16 KiB phases
+   summary: 0 passed, 0 failed
+== shifted-control (force64k, validation): skipped; exit 0, PASS 0, FAIL 0, SKIP 1, validation messages 0
+   arguments: --backend shifted-control --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control arena: test block 64 KiB, driver bind granularity 64 KiB, 8 blocks
+   T1  SKIP shifted control: the driver binds in units of 64 KiB, so one memory object cannot express 16 KiB phases
+   summary: 0 passed, 0 failed
+== shifted-dmabuf (default, plain): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend shifted-dmabuf --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf arena: test block 64 KiB, driver bind granularity 4 KiB, 8 blocks
+       import: store 0 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.178 ms, vkAllocateMemory 0.077 ms
+       import: store 0 from page 1 (phase 16 KiB), 124 pages, udmabuf 0.123 ms, vkAllocateMemory 0.070 ms
+       import: store 0 from page 2 (phase 32 KiB), 124 pages, udmabuf 0.118 ms, vkAllocateMemory 0.072 ms
+       import: store 0 from page 3 (phase 48 KiB), 124 pages, udmabuf 0.122 ms, vkAllocateMemory 0.070 ms
+       import: store 1 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.174 ms, vkAllocateMemory 0.058 ms
+       bind: 8 blocks in 0.224 ms; memory objects over store 0: 4; gtt_used +0 bytes for a store of 2097152 bytes
+   T1  PASS shifted dma-buf: GPU reads 4 views of the same pages at phases 0..48 KiB, a 2-block mapping at phase 16 KiB and both controls (0 mismatches; no mismatch)
+   T2  PASS shifted dma-buf: GPU fill of guest page 19 through each of 4 phases, read back through all views and by the CPU, separate submissions (0 mismatches; no mismatch)
+   T3  PASS shifted dma-buf: negative control, a private copy of the same bytes shows none of the writes (4096 of 4096 written words differ from an alias)
+   T4  PASS shifted dma-buf: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+   T5  PASS shifted dma-buf: CPU writes seen by the GPU through all views (0 mismatches; no mismatch)
+   T6  PASS shifted dma-buf: GPU fill across a block boundary of the phase-16 KiB mapping lands on neighbouring guest pages 36 and 37 (0 mismatches; no mismatch)
+   summary: 6 passed, 0 failed
+== shifted-dmabuf (default, validation): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend shifted-dmabuf --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf arena: test block 64 KiB, driver bind granularity 4 KiB, 8 blocks
+       import: store 0 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.179 ms, vkAllocateMemory 0.087 ms
+       import: store 0 from page 1 (phase 16 KiB), 124 pages, udmabuf 0.124 ms, vkAllocateMemory 0.069 ms
+       import: store 0 from page 2 (phase 32 KiB), 124 pages, udmabuf 0.129 ms, vkAllocateMemory 0.071 ms
+       import: store 0 from page 3 (phase 48 KiB), 124 pages, udmabuf 0.188 ms, vkAllocateMemory 0.075 ms
+       import: store 1 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.149 ms, vkAllocateMemory 0.079 ms
+       bind: 8 blocks in 1.314 ms; memory objects over store 0: 4; gtt_used +0 bytes for a store of 2097152 bytes
+   T1  PASS shifted dma-buf: GPU reads 4 views of the same pages at phases 0..48 KiB, a 2-block mapping at phase 16 KiB and both controls (0 mismatches; no mismatch)
+   T2  PASS shifted dma-buf: GPU fill of guest page 19 through each of 4 phases, read back through all views and by the CPU, separate submissions (0 mismatches; no mismatch)
+   T3  PASS shifted dma-buf: negative control, a private copy of the same bytes shows none of the writes (4096 of 4096 written words differ from an alias)
+   T4  PASS shifted dma-buf: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+   T5  PASS shifted dma-buf: CPU writes seen by the GPU through all views (0 mismatches; no mismatch)
+   T6  PASS shifted dma-buf: GPU fill across a block boundary of the phase-16 KiB mapping lands on neighbouring guest pages 36 and 37 (0 mismatches; no mismatch)
+   summary: 6 passed, 0 failed
+== shifted-dmabuf (force64k, plain): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend shifted-dmabuf --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf arena: test block 64 KiB, driver bind granularity 64 KiB, 8 blocks
+       import: store 0 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.170 ms, vkAllocateMemory 0.084 ms
+       import: store 0 from page 1 (phase 16 KiB), 124 pages, udmabuf 0.153 ms, vkAllocateMemory 0.054 ms
+       import: store 0 from page 2 (phase 32 KiB), 124 pages, udmabuf 0.132 ms, vkAllocateMemory 0.059 ms
+       import: store 0 from page 3 (phase 48 KiB), 124 pages, udmabuf 0.128 ms, vkAllocateMemory 0.066 ms
+       import: store 1 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.167 ms, vkAllocateMemory 0.067 ms
+       bind: 8 blocks in 0.236 ms; memory objects over store 0: 4; gtt_used +0 bytes for a store of 2097152 bytes
+   T1  PASS shifted dma-buf: GPU reads 4 views of the same pages at phases 0..48 KiB, a 2-block mapping at phase 16 KiB and both controls (0 mismatches; no mismatch)
+   T2  PASS shifted dma-buf: GPU fill of guest page 19 through each of 4 phases, read back through all views and by the CPU, separate submissions (0 mismatches; no mismatch)
+   T3  PASS shifted dma-buf: negative control, a private copy of the same bytes shows none of the writes (4096 of 4096 written words differ from an alias)
+   T4  PASS shifted dma-buf: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+   T5  PASS shifted dma-buf: CPU writes seen by the GPU through all views (0 mismatches; no mismatch)
+   T6  PASS shifted dma-buf: GPU fill across a block boundary of the phase-16 KiB mapping lands on neighbouring guest pages 36 and 37 (0 mismatches; no mismatch)
+   summary: 6 passed, 0 failed
+== shifted-dmabuf (force64k, validation): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend shifted-dmabuf --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf arena: test block 64 KiB, driver bind granularity 64 KiB, 8 blocks
+       import: store 0 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.156 ms, vkAllocateMemory 0.099 ms
+       import: store 0 from page 1 (phase 16 KiB), 124 pages, udmabuf 0.091 ms, vkAllocateMemory 0.067 ms
+       import: store 0 from page 2 (phase 32 KiB), 124 pages, udmabuf 0.105 ms, vkAllocateMemory 0.067 ms
+       import: store 0 from page 3 (phase 48 KiB), 124 pages, udmabuf 0.084 ms, vkAllocateMemory 0.063 ms
+       import: store 1 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.152 ms, vkAllocateMemory 0.066 ms
+       bind: 8 blocks in 0.649 ms; memory objects over store 0: 4; gtt_used +0 bytes for a store of 2097152 bytes
+   T1  PASS shifted dma-buf: GPU reads 4 views of the same pages at phases 0..48 KiB, a 2-block mapping at phase 16 KiB and both controls (0 mismatches; no mismatch)
+   T2  PASS shifted dma-buf: GPU fill of guest page 19 through each of 4 phases, read back through all views and by the CPU, separate submissions (0 mismatches; no mismatch)
+   T3  PASS shifted dma-buf: negative control, a private copy of the same bytes shows none of the writes (4096 of 4096 written words differ from an alias)
+   T4  PASS shifted dma-buf: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+   T5  PASS shifted dma-buf: CPU writes seen by the GPU through all views (0 mismatches; no mismatch)
+   T6  PASS shifted dma-buf: GPU fill across a block boundary of the phase-16 KiB mapping lands on neighbouring guest pages 36 and 37 (0 mismatches; no mismatch)
+   summary: 6 passed, 0 failed
+== stitched-control (default, plain): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend stitched-control --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control arena: test block 64 KiB, driver bind granularity 4 KiB, 6 blocks
+       bind: 6 blocks in 0.273 ms; gtt_used +0 bytes
+   U1  PASS stitched control: GPU reads 3 blocks built from guest pages 81,68,.. (irregular), two runs, and a consecutive run, next to ordinary views (0 mismatches; no mismatch)
+   U2  PASS stitched control: GPU fill through each of 8 stitched pages lands on its guest page, seen by the CPU and through the ordinary view (0 mismatches; no mismatch)
+   U3  PASS stitched control: GPU fill through ordinary views is read through the stitched object (0 mismatches; no mismatch)
+   U4  PASS stitched control: negative control, a private copy of the same bytes shows none of the writes (16384 of 16384 written words differ from an alias)
+   U5  PASS stitched control: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+       rebind of one block after a partial unmap: 0.246 ms
+   U6  PASS stitched control: guest page 68 unmapped from a bound block by swapping in a new object; a GPU fill of the block leaves that page untouched (0 mismatches; no mismatch)
+   summary: 6 passed, 0 failed
+== stitched-control (default, validation): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend stitched-control --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control arena: test block 64 KiB, driver bind granularity 4 KiB, 6 blocks
+       bind: 6 blocks in 0.680 ms; gtt_used +0 bytes
+   U1  PASS stitched control: GPU reads 3 blocks built from guest pages 81,68,.. (irregular), two runs, and a consecutive run, next to ordinary views (0 mismatches; no mismatch)
+   U2  PASS stitched control: GPU fill through each of 8 stitched pages lands on its guest page, seen by the CPU and through the ordinary view (0 mismatches; no mismatch)
+   U3  PASS stitched control: GPU fill through ordinary views is read through the stitched object (0 mismatches; no mismatch)
+   U4  PASS stitched control: negative control, a private copy of the same bytes shows none of the writes (16384 of 16384 written words differ from an alias)
+   U5  PASS stitched control: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+       rebind of one block after a partial unmap: 0.356 ms
+   U6  PASS stitched control: guest page 68 unmapped from a bound block by swapping in a new object; a GPU fill of the block leaves that page untouched (0 mismatches; no mismatch)
+   summary: 6 passed, 0 failed
+== stitched-control (force64k, plain): skipped; exit 0, PASS 0, FAIL 0, SKIP 1, validation messages 0
+   arguments: --backend stitched-control --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control arena: test block 64 KiB, driver bind granularity 64 KiB, 6 blocks
+   U1  SKIP stitched control: the driver binds in units of 64 KiB, so one memory object cannot express 16 KiB phases
+   summary: 0 passed, 0 failed
+== stitched-control (force64k, validation): skipped; exit 0, PASS 0, FAIL 0, SKIP 1, validation messages 0
+   arguments: --backend stitched-control --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       control arena: test block 64 KiB, driver bind granularity 64 KiB, 6 blocks
+   U1  SKIP stitched control: the driver binds in units of 64 KiB, so one memory object cannot express 16 KiB phases
+   summary: 0 passed, 0 failed
+== stitched-dmabuf (default, plain): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend stitched-dmabuf --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13475840 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf arena: test block 64 KiB, driver bind granularity 4 KiB, 6 blocks
+       import: stitched object of 12 pages in 7 udmabuf items, udmabuf 0.068 ms, vkAllocateMemory 0.040 ms
+       import: store 0 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.152 ms, vkAllocateMemory 0.088 ms
+       import: store 1 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.166 ms, vkAllocateMemory 0.063 ms
+       bind: 6 blocks in 0.188 ms; gtt_used +0 bytes
+   U1  PASS stitched dma-buf: GPU reads 3 blocks built from guest pages 81,68,.. (irregular), two runs, and a consecutive run, next to ordinary views (0 mismatches; no mismatch)
+   U2  PASS stitched dma-buf: GPU fill through each of 8 stitched pages lands on its guest page, seen by the CPU and through the ordinary view (0 mismatches; no mismatch)
+   U3  PASS stitched dma-buf: GPU fill through ordinary views is read through the stitched object (0 mismatches; no mismatch)
+   U4  PASS stitched dma-buf: negative control, a private copy of the same bytes shows none of the writes (16384 of 16384 written words differ from an alias)
+   U5  PASS stitched dma-buf: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+       import: stitched object of 4 pages in 4 udmabuf items, udmabuf 0.043 ms, vkAllocateMemory 0.073 ms
+       rebind of one block after a partial unmap: 0.112 ms
+   U6  PASS stitched dma-buf: guest page 68 unmapped from a bound block by swapping in a new object; a GPU fill of the block leaves that page untouched (0 mismatches; no mismatch)
+   U7  INFO stitched dma-buf: a list that names one guest page twice: accepted by the kernel
+   summary: 6 passed, 0 failed
+== stitched-dmabuf (default, validation): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend stitched-dmabuf --block-kib 64
+   gtt_used_bytes before: 13475840  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf arena: test block 64 KiB, driver bind granularity 4 KiB, 6 blocks
+       import: stitched object of 12 pages in 7 udmabuf items, udmabuf 0.040 ms, vkAllocateMemory 0.059 ms
+       import: store 0 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.124 ms, vkAllocateMemory 0.074 ms
+       import: store 1 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.148 ms, vkAllocateMemory 0.063 ms
+       bind: 6 blocks in 0.504 ms; gtt_used +0 bytes
+   U1  PASS stitched dma-buf: GPU reads 3 blocks built from guest pages 81,68,.. (irregular), two runs, and a consecutive run, next to ordinary views (0 mismatches; no mismatch)
+   U2  PASS stitched dma-buf: GPU fill through each of 8 stitched pages lands on its guest page, seen by the CPU and through the ordinary view (0 mismatches; no mismatch)
+   U3  PASS stitched dma-buf: GPU fill through ordinary views is read through the stitched object (0 mismatches; no mismatch)
+   U4  PASS stitched dma-buf: negative control, a private copy of the same bytes shows none of the writes (16384 of 16384 written words differ from an alias)
+   U5  PASS stitched dma-buf: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+       import: stitched object of 4 pages in 4 udmabuf items, udmabuf 0.046 ms, vkAllocateMemory 0.092 ms
+       rebind of one block after a partial unmap: 0.260 ms
+   U6  PASS stitched dma-buf: guest page 68 unmapped from a bound block by swapping in a new object; a GPU fill of the block leaves that page untouched (0 mismatches; no mismatch)
+   U7  INFO stitched dma-buf: a list that names one guest page twice: accepted by the kernel
+   summary: 6 passed, 0 failed
+== stitched-dmabuf (force64k, plain): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend stitched-dmabuf --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf arena: test block 64 KiB, driver bind granularity 64 KiB, 6 blocks
+       import: stitched object of 12 pages in 7 udmabuf items, udmabuf 0.047 ms, vkAllocateMemory 0.042 ms
+       import: store 0 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.167 ms, vkAllocateMemory 0.079 ms
+       import: store 1 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.176 ms, vkAllocateMemory 0.080 ms
+       bind: 6 blocks in 0.214 ms; gtt_used +0 bytes
+   U1  PASS stitched dma-buf: GPU reads 3 blocks built from guest pages 81,68,.. (irregular), two runs, and a consecutive run, next to ordinary views (0 mismatches; no mismatch)
+   U2  PASS stitched dma-buf: GPU fill through each of 8 stitched pages lands on its guest page, seen by the CPU and through the ordinary view (0 mismatches; no mismatch)
+   U3  PASS stitched dma-buf: GPU fill through ordinary views is read through the stitched object (0 mismatches; no mismatch)
+   U4  PASS stitched dma-buf: negative control, a private copy of the same bytes shows none of the writes (16384 of 16384 written words differ from an alias)
+   U5  PASS stitched dma-buf: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+       import: stitched object of 4 pages in 4 udmabuf items, udmabuf 0.040 ms, vkAllocateMemory 0.064 ms
+       rebind of one block after a partial unmap: 0.136 ms
+   U6  PASS stitched dma-buf: guest page 68 unmapped from a bound block by swapping in a new object; a GPU fill of the block leaves that page untouched (0 mismatches; no mismatch)
+   U7  INFO stitched dma-buf: a list that names one guest page twice: accepted by the kernel
+   summary: 6 passed, 0 failed
+== stitched-dmabuf (force64k, validation): passed; exit 0, PASS 6, FAIL 0, SKIP 0, validation messages 0
+   arguments: --backend stitched-dmabuf --block-kib 64
+   gtt_used_bytes before: 13479936  after: 13479936 
+   Q   host-pointer plain buffer: importable 
+   Q   host-pointer sparse buffer: importable 
+   Q   dma-buf      plain buffer: importable exportable 
+   Q   dma-buf      sparse buffer: importable exportable 
+       dma-buf arena: test block 64 KiB, driver bind granularity 64 KiB, 6 blocks
+       import: stitched object of 12 pages in 7 udmabuf items, udmabuf 0.048 ms, vkAllocateMemory 0.053 ms
+       import: store 0 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.142 ms, vkAllocateMemory 0.076 ms
+       import: store 1 from page 0 (phase 0 KiB), 124 pages, udmabuf 0.136 ms, vkAllocateMemory 0.069 ms
+       bind: 6 blocks in 0.547 ms; gtt_used +0 bytes
+   U1  PASS stitched dma-buf: GPU reads 3 blocks built from guest pages 81,68,.. (irregular), two runs, and a consecutive run, next to ordinary views (0 mismatches; no mismatch)
+   U2  PASS stitched dma-buf: GPU fill through each of 8 stitched pages lands on its guest page, seen by the CPU and through the ordinary view (0 mismatches; no mismatch)
+   U3  PASS stitched dma-buf: GPU fill through ordinary views is read through the stitched object (0 mismatches; no mismatch)
+   U4  PASS stitched dma-buf: negative control, a private copy of the same bytes shows none of the writes (16384 of 16384 written words differ from an alias)
+   U5  PASS stitched dma-buf: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+       import: stitched object of 4 pages in 4 udmabuf items, udmabuf 0.040 ms, vkAllocateMemory 0.087 ms
+       rebind of one block after a partial unmap: 0.263 ms
+   U6  PASS stitched dma-buf: guest page 68 unmapped from a bound block by swapping in a new object; a GPU fill of the block leaves that page untouched (0 mismatches; no mismatch)
+   U7  INFO stitched dma-buf: a list that names one guest page twice: accepted by the kernel
+   summary: 6 passed, 0 failed
+result: 22 runs passed, 4 skipped, 0 failed
