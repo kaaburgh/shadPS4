@@ -1,0 +1,32 @@
+device: AMD Radeon Vega 6 Graphics (RADV RAVEN), driver: radv Mesa 25.0.7-2+deb13u1, api 1.4.305
+sparseAddressSpaceSize=0xfffffffc maxMemoryAllocationCount=4294967295
+residencyNonResidentStrict=1 minImportedHostPointerAlignment=0x1000
+memtype  0 heap 1: DEVICE_LOCAL
+memtype  1 heap 1: DEVICE_LOCAL
+memtype  2 heap 0: HOST_VISIBLE COHERENT
+memtype  3 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype  4 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype  5 heap 0: HOST_VISIBLE COHERENT CACHED
+memtype  6 heap 0: HOST_VISIBLE COHERENT CACHED
+memtype  7 heap 1: DEVICE_LOCAL
+memtype  8 heap 0: HOST_VISIBLE COHERENT
+memtype  9 heap 1: DEVICE_LOCAL HOST_VISIBLE COHERENT
+memtype 10 heap 0: HOST_VISIBLE COHERENT CACHED
+queue families: work=0 sparse=2
+extensions: external_memory_host=1 external_memory_fd=1 dma_buf=1
+features: sparseBinding=1 sparseResidencyBuffer=1 sparseResidencyAliased=1
+Q   host-pointer plain buffer: importable 
+Q   host-pointer sparse buffer: importable 
+Q   dma-buf      plain buffer: importable exportable 
+Q   dma-buf      sparse buffer: importable exportable 
+    control arena: test block 64 KiB, driver bind granularity 4 KiB, 6 blocks
+    bind: 6 blocks in 0.561 ms; gtt_used +0 bytes
+    after the first GPU use: gtt_used +344064 bytes
+U1  PASS stitched control: GPU reads 3 blocks built from guest pages 81,68,.. (irregular), two runs, and a consecutive run, next to ordinary views (0 mismatches; no mismatch)
+U2  PASS stitched control: GPU fill through each of 8 stitched pages lands on its guest page, seen by the CPU and through the ordinary view (0 mismatches; no mismatch)
+U3  PASS stitched control: GPU fill through ordinary views is read through the stitched object (0 mismatches; no mismatch)
+U4  PASS stitched control: negative control, a private copy of the same bytes shows none of the writes (16384 of 16384 written words differ from an alias)
+U5  PASS stitched control: the same with fill, barrier and read in one command buffer (0 mismatches; no mismatch)
+    rebind of one block after a partial unmap: 0.402 ms
+U6  PASS stitched control: guest page 68 unmapped from a bound block by swapping in a new object; a GPU fill of the block leaves that page untouched (0 mismatches; no mismatch)
+summary: 6 passed, 0 failed
