@@ -95,6 +95,18 @@ public:
     /// Returns true when buffers may be served from the guest physical backing (UMA E3).
     [[nodiscard]] bool IsSharedBackingEnabled() const noexcept;
 
+    /// Returns the size of a BufferCache block, the granularity of shared state.
+    [[nodiscard]] u32 GetBlockSize() const noexcept {
+        return block_size;
+    }
+
+    /// For a CP write on the GPU timeline (WRITE_DATA): returns the shared buffer and offset of
+    /// [addr, addr + size), which must lie in one block, when that block is served from the
+    /// shared backing, so that recorded work reads and writes it in guest memory when it
+    /// executes. Never imports a chunk, demotes a block or waits.
+    [[nodiscard]] std::optional<std::pair<const Buffer*, u64>> ObtainSharedBufferForCpWrite(
+        VAddr addr, u64 size);
+
     /// Makes device writes to the shared backing visible to the host at the end of a submit.
     void RecordSharedBackingVisibility();
 

@@ -161,6 +161,27 @@ void Runtime::InlineData(VideoCore::Buffer* dst, u64 offset, u32 value) {
                  vk::AccessFlagBits2::eTransferWrite);
 }
 
+void Runtime::UpdateBuffer(const VideoCore::Buffer* dst, u64 offset, std::span<const u8> data) {
+    ASSERT_MSG(offset % 4 == 0 && data.size() % 4 == 0 && !data.empty() && data.size() <= 65536,
+               "UpdateBuffer offset={} size={}", offset, data.size());
+    // Shaders reach shared buffers through device addresses too, and those accesses have no
+    // tracked range: order the write after everything recorded so far, not only after the
+    // tracked accesses that overlap it.
+    memory_barrier.srcStageMask |= vk::PipelineStageFlagBits2::eAllCommands;
+    memory_barrier.srcAccessMask |= vk::AccessFlagBits2::eMemoryWrite;
+    FlushBarriers();
+
+    const auto cmdbuf = scheduler.CommandBuffer();
+    scheduler.Census(UmaCensus::Kind::Command, 0, data.size(), 12);
+    // vkCmdUpdateBuffer copies the data into the command buffer when it is recorded.
+    cmdbuf.updateBuffer(dst->Handle(), offset, data.size(), data.data());
+
+    // Make the write visible to every later command for the same reason.
+    AccessBuffer(dst, offset, data.size(), vk::PipelineStageFlagBits2::eCopy,
+                 vk::AccessFlagBits2::eTransferWrite);
+    FlushBarriers();
+}
+
 bool Runtime::Transit(VideoCore::Image* image, vk::ImageLayout dst_layout,
                       vk::PipelineStageFlags2 dst_stage, vk::AccessFlags2 dst_access,
                       std::optional<VideoCore::SubresourceRange> subres_range) {
